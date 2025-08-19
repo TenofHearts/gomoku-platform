@@ -1,48 +1,236 @@
 <!DOCTYPE html>
 <html lang="zh-CN">
+
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>我的比赛记录 - 五子棋对战平台</title>
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link
+        href="https://fonts.googleapis.com/css2?family=Noto+Sans+SC:wght@300;400;500;700&family=Roboto+Mono:wght@400;500&display=swap"
+        rel="stylesheet">
     <script src="https://unpkg.com/vue@3/dist/vue.global.js"></script>
     <style>
-        .results-card {
-            border-radius: 15px;
-            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.1);
+        * {
+            font-family: 'Noto Sans SC', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
         }
+
+        body {
+            background: linear-gradient(135deg, #f8fafc 0%, #e2e8f0 100%);
+            min-height: 100vh;
+            padding: 20px;
+        }
+
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+        }
+
+        .navbar {
+            border-radius: 15px;
+            margin: 0 20px 20px 20px;
+            box-shadow: 0 4px 15px rgba(0, 0, 0, 0.1);
+        }
+
         .navbar-brand {
             font-weight: 700;
+            font-size: 1.25rem;
         }
+
+        .results-card {
+            border-radius: 20px;
+            box-shadow: 0 15px 35px rgba(0, 0, 0, 0.08);
+            border: 1px solid rgba(255, 255, 255, 0.2);
+            margin: 20px;
+            overflow: hidden;
+        }
+
+        .card-header {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%) !important;
+            border-radius: 20px 20px 0 0 !important;
+            padding: 1.5rem;
+        }
+
+        .card-header h4 {
+            font-weight: 600;
+            margin: 0;
+            text-align: center;
+        }
+
+        .card-body {
+            padding: 2rem;
+        }
+
         .match-result {
-            border-radius: 8px;
+            border-radius: 15px;
             border-left: 4px solid;
+            padding: 1.5rem;
+            margin-bottom: 1.5rem;
+            transition: all 0.3s ease;
+            box-shadow: 0 4px 15px rgba(0, 0, 0, 0.05);
         }
+
+        .match-result:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 8px 25px rgba(0, 0, 0, 0.1);
+        }
+
         .match-win {
-            border-left-color: #28a745;
-            background-color: #f8fff9;
+            border-left-color: #48bb78;
+            background: linear-gradient(135deg, #f0fff4 0%, #c6f6d5 100%);
         }
+
         .match-loss {
-            border-left-color: #dc3545;
-            background-color: #fff8f8;
+            border-left-color: #f56565;
+            background: linear-gradient(135deg, #fff5f5 0%, #fed7d7 100%);
         }
+
         .stats-card {
-            border-radius: 10px;
+            border-radius: 15px;
             background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
             color: white;
+            margin: 20px;
+            border: none;
+            box-shadow: 0 8px 25px rgba(102, 126, 234, 0.3);
+            text-align: center;
         }
+
+        .stats-card h3 {
+            font-weight: 700;
+            font-size: 2rem;
+        }
+
+        .stats-card small {
+            font-weight: 500;
+            opacity: 0.9;
+        }
+
         .win-rate-circle {
-            width: 60px;
-            height: 60px;
+            width: 65px;
+            height: 65px;
             border-radius: 50%;
             display: flex;
             align-items: center;
             justify-content: center;
             font-weight: bold;
-            font-size: 14px;
+            font-size: 1rem;
+            box-shadow: 0 4px 15px rgba(0, 0, 0, 0.2);
+            margin: 0 auto;
+        }
+
+        .badge {
+            font-size: 0.9rem;
+            padding: 0.5rem 1rem;
+            border-radius: 10px;
+            font-weight: 600;
+        }
+
+        .badge.bg-success {
+            background: linear-gradient(45deg, #48bb78, #38a169) !important;
+        }
+
+        .badge.bg-danger {
+            background: linear-gradient(45deg, #f56565, #e53e3e) !important;
+        }
+
+        .badge.bg-primary {
+            background: linear-gradient(45deg, #667eea, #764ba2) !important;
+        }
+
+        .progress {
+            height: 12px;
+            border-radius: 12px;
+            background-color: #e2e8f0;
+        }
+
+        .progress-bar {
+            border-radius: 12px;
+        }
+
+        .bg-success {
+            background: linear-gradient(45deg, #48bb78, #38a169) !important;
+        }
+
+        .bg-danger {
+            background: linear-gradient(45deg, #f56565, #e53e3e) !important;
+        }
+
+        .alert-info {
+            background: linear-gradient(135deg, #bee3f8 0%, #90cdf4 100%);
+            color: #2c5282;
+            border: none;
+            border-radius: 15px;
+            border-left: 4px solid #3182ce;
+            margin: 20px;
+        }
+
+        .alert-info h6 {
+            font-weight: 600;
+            margin-bottom: 1rem;
+        }
+
+        .alert-info ul {
+            margin: 0;
+        }
+
+        .alert-info li {
+            margin-bottom: 0.5rem;
+        }
+
+        .btn {
+            border-radius: 10px;
+            font-weight: 500;
+            transition: all 0.3s ease;
+        }
+
+        .btn-outline-light {
+            border: 2px solid rgba(255, 255, 255, 0.7);
+        }
+
+        .btn-outline-light:hover {
+            transform: translateY(-1px);
+        }
+
+        .btn-primary {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            border: none;
+        }
+
+        .btn-primary:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 8px 25px rgba(102, 126, 234, 0.4);
+        }
+
+        .spinner-border {
+            margin: 0 auto;
+        }
+
+        .text-center p {
+            margin-bottom: 1rem;
+        }
+
+        .fw-bold {
+            font-weight: 600 !important;
+        }
+
+        .h5 {
+            font-weight: 600;
+        }
+
+        .text-muted {
+            color: #718096 !important;
+        }
+
+        .navbar-text {
+            font-weight: 500;
+        }
+
+        small {
+            font-size: 0.9rem;
         }
     </style>
 </head>
+
 <body>
     <div id="app">
         <!-- 导航栏 -->
@@ -53,6 +241,7 @@
                     <span class="navbar-text me-3">欢迎，学号：{{ currentUser }}</span>
                     <a href="upload.html" class="nav-link me-3">上传AI</a>
                     <a href="rankings.html" class="nav-link me-3">排行榜</a>
+                    <a href="change-password.html" class="nav-link me-3">修改密码</a>
                     <button class="btn btn-outline-light btn-sm" @click="logout">登出</button>
                 </div>
             </div>
@@ -80,9 +269,10 @@
                     </div>
                 </div>
                 <div class="col-md-3">
-                    <div class="card stats-card text-center p-3 d-flex flex-row align-items-center justify-content-center">
-                        <div class="win-rate-circle me-2" 
-                             :style="{ backgroundColor: getWinRateColor(myStats.winRate) }">
+                    <div
+                        class="card stats-card text-center p-3 d-flex flex-row align-items-center justify-content-center">
+                        <div class="win-rate-circle me-2"
+                            :style="{ backgroundColor: getWinRateColor(myStats.winRate) }">
                             {{ myStats.winRate }}%
                         </div>
                         <small>胜率</small>
@@ -93,7 +283,8 @@
             <div class="row">
                 <div class="col-12">
                     <div class="results-card card">
-                        <div class="card-header bg-primary text-white d-flex justify-content-between align-items-center">
+                        <div
+                            class="card-header bg-primary text-white d-flex justify-content-between align-items-center">
                             <h4 class="mb-0">📊 比赛历史记录</h4>
                             <button class="btn btn-outline-light btn-sm" @click="loadMatches">刷新</button>
                         </div>
@@ -108,9 +299,8 @@
 
                             <!-- 比赛记录列表 -->
                             <div v-else-if="matches.length > 0">
-                                <div v-for="match in matches" :key="match.id" 
-                                     class="match-result p-3 mb-3"
-                                     :class="getMatchResultClass(match)">
+                                <div v-for="match in matches" :key="match.id" class="match-result p-3 mb-3"
+                                    :class="getMatchResultClass(match)">
                                     <div class="row align-items-center">
                                         <div class="col-md-3">
                                             <h6 class="mb-1">
@@ -142,9 +332,8 @@
                                         <div class="col-md-2">
                                             <div class="text-center">
                                                 <div class="progress mb-1" style="height: 8px;">
-                                                    <div class="progress-bar" 
-                                                         :class="getProgressBarClass(match)"
-                                                         :style="{ width: getMyWinPercentage(match) + '%' }">
+                                                    <div class="progress-bar" :class="getProgressBarClass(match)"
+                                                        :style="{ width: getMyWinPercentage(match) + '%' }">
                                                     </div>
                                                 </div>
                                                 <small>{{ getMyWinPercentage(match) }}% 胜率</small>
@@ -210,8 +399,8 @@
                     try {
                         const response = await fetch('/api/my-results');
                         const data = await response.json();
-                        
-                        this.matches = data.matches.sort((a, b) => 
+
+                        this.matches = data.matches.sort((a, b) =>
                             new Date(b.timestamp) - new Date(a.timestamp));
                         this.calculateStats();
                     } catch (error) {
@@ -224,7 +413,7 @@
                     this.myStats.totalMatches = this.matches.length;
                     this.myStats.wins = this.matches.filter(m => m.winner === this.currentUser).length;
                     this.myStats.losses = this.myStats.totalMatches - this.myStats.wins;
-                    this.myStats.winRate = this.myStats.totalMatches > 0 ? 
+                    this.myStats.winRate = this.myStats.totalMatches > 0 ?
                         Math.round((this.myStats.wins / this.myStats.totalMatches) * 100) : 0;
                 },
                 getMatchResult(match) {
@@ -234,23 +423,23 @@
                     return match.winner === this.currentUser ? 'match-win' : 'match-loss';
                 },
                 getBadgeClass(match) {
-                    return match.winner === this.currentUser ? 
+                    return match.winner === this.currentUser ?
                         'badge bg-success' : 'badge bg-danger';
                 },
                 getProgressBarClass(match) {
-                    return match.winner === this.currentUser ? 
+                    return match.winner === this.currentUser ?
                         'bg-success' : 'bg-danger';
                 },
                 getOpponent(match) {
-                    return match.challenger === this.currentUser ? 
+                    return match.challenger === this.currentUser ?
                         match.defender : match.challenger;
                 },
                 getMyScore(match) {
-                    return match.challenger === this.currentUser ? 
+                    return match.challenger === this.currentUser ?
                         match.challenger_wins : match.defender_wins;
                 },
                 getOpponentScore(match) {
-                    return match.challenger === this.currentUser ? 
+                    return match.challenger === this.currentUser ?
                         match.defender_wins : match.challenger_wins;
                 },
                 getMyWinPercentage(match) {
@@ -278,11 +467,11 @@
                     } else if (diffDays < 7) {
                         return `${diffDays}天前`;
                     } else {
-                        return date.toLocaleDateString('zh-CN') + ' ' + 
-                               date.toLocaleTimeString('zh-CN', { 
-                                   hour: '2-digit', 
-                                   minute: '2-digit' 
-                               });
+                        return date.toLocaleDateString('zh-CN') + ' ' +
+                            date.toLocaleTimeString('zh-CN', {
+                                hour: '2-digit',
+                                minute: '2-digit'
+                            });
                     }
                 },
                 async logout() {
@@ -300,12 +489,12 @@
                 try {
                     const response = await fetch('/api/auth-status');
                     const data = await response.json();
-                    
+
                     if (!data.loggedIn) {
                         window.location.href = 'index.html';
                         return;
                     }
-                    
+
                     this.currentUser = data.studentId;
                     await this.loadMatches();
                 } catch (error) {
@@ -316,4 +505,5 @@
         }).mount('#app');
     </script>
 </body>
+
 </html>

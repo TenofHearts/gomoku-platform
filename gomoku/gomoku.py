@@ -120,13 +120,14 @@ def print_board(board):
         print()
 
 
-def play_game(agent1=None, agent2=None, board_size=15):
+def play_game(agent1=None, agent2=None, board_size=15, silent=False):
     """
     进行一局游戏
 
     @param agent1: 玩家1的Agent, 如果为None则使用默认Agent
     @param agent2: 玩家2的Agent, 如果为None则使用默认Agent
     @param board_size: 棋盘大小, 默认15x15(标准五子棋棋盘)
+    @param silent: 是否静默模式，不打印游戏过程
     """
     board = create_board(board_size)
     current_player = 1
@@ -135,12 +136,14 @@ def play_game(agent1=None, agent2=None, board_size=15):
 
     agents = {1: agent1, 2: agent2}
 
-    print("游戏开始! ")
-    print(f"玩家操作时间限制: {PLAYER_TIME_LIMIT}秒")
-    print_board(board)
+    if not silent:
+        print("游戏开始! ")
+        print(f"玩家操作时间限制: {PLAYER_TIME_LIMIT}秒")
+        print_board(board)
 
     while not game_over:
-        print(f"\n轮到玩家 {current_player} (Agent {current_player})")
+        if not silent:
+            print(f"\n轮到玩家 {current_player} (Agent {current_player})")
 
         current_agent = agents[current_player]
 
@@ -152,9 +155,13 @@ def play_game(agent1=None, agent2=None, board_size=15):
             try:
                 move = current_agent.make_move(board.copy())
                 end_time = time.time()
-                print(f"玩家 {current_player} 落子时间: {end_time - start_time:.4f}秒")
+                if not silent:
+                    print(
+                        f"玩家 {current_player} 落子时间: {end_time - start_time:.4f}秒"
+                    )
             except Exception as e:
-                print(f"玩家 {current_player} 出现异常: {e}")
+                if not silent:
+                    print(f"玩家 {current_player} 出现异常: {e}")
                 winner = 3 - current_player
                 game_over = True
                 break
@@ -165,23 +172,26 @@ def play_game(agent1=None, agent2=None, board_size=15):
                     move = future.result(timeout=PLAYER_TIME_LIMIT)
                     end_time = time.time()
 
-                    print(
-                        f"玩家 {current_player} 落子时间: {end_time - start_time:.4f}秒"
-                    )
+                    if not silent:
+                        print(
+                            f"玩家 {current_player} 落子时间: {end_time - start_time:.4f}秒"
+                        )
 
                 except FutureTimeoutError:
                     end_time = time.time()
-                    print(
-                        f"玩家 {current_player} 操作超时! 超时时间: {end_time - start_time:.4f}秒"
-                    )
-                    print(
-                        f"超过了 {PLAYER_TIME_LIMIT}秒的时间限制，玩家 {current_player} 败北!"
-                    )
+                    if not silent:
+                        print(
+                            f"玩家 {current_player} 操作超时! 超时时间: {end_time - start_time:.4f}秒"
+                        )
+                        print(
+                            f"超过了 {PLAYER_TIME_LIMIT}秒的时间限制，玩家 {current_player} 败北!"
+                        )
                     winner = 3 - current_player
                     game_over = True
                     break
                 except Exception as e:
-                    print(f"玩家 {current_player} 出现异常: {e}")
+                    if not silent:
+                        print(f"玩家 {current_player} 出现异常: {e}")
                     winner = 3 - current_player
                     game_over = True
                     break
@@ -190,7 +200,8 @@ def play_game(agent1=None, agent2=None, board_size=15):
             break
 
         if move is None:
-            print("Agent无法做出有效移动! ")
+            if not silent:
+                print("Agent无法做出有效移动! ")
             winner = 3 - current_player
             break
 
@@ -198,28 +209,33 @@ def play_game(agent1=None, agent2=None, board_size=15):
 
         if not is_valid_move(board, row, col):
             winner = 3 - current_player
-            print(f"无效的移动: ({row}, {col}), 对手(Agent {winner})获胜! ")
+            if not silent:
+                print(f"无效的移动: ({row}, {col}), 对手(Agent {winner})获胜! ")
             break
 
         make_move(board, row, col, current_player)
-        print(f"玩家 {current_player} 在 ({row}, {col}) 落子")
-        print_board(board)
+        if not silent:
+            print(f"玩家 {current_player} 在 ({row}, {col}) 落子")
+            print_board(board)
 
         if check_win(board, row, col):
             game_over = True
             winner = current_player
-            print(f"玩家 {current_player} 获胜! ")
+            if not silent:
+                print(f"玩家 {current_player} 获胜! ")
         elif is_board_full(board):
             game_over = True
             winner = 0
-            print("游戏平局! ")
+            if not silent:
+                print("游戏平局! ")
         else:
             current_player = 3 - current_player
 
-    if winner == 0:
-        print("\n游戏结果: 平局! ")
-    elif winner:
-        print(f"\n游戏结果: 玩家 {winner} 获胜! ")
+    if not silent:
+        if winner == 0:
+            print("\n游戏结果: 平局! ")
+        elif winner:
+            print(f"\n游戏结果: 玩家 {winner} 获胜! ")
 
     return winner
 
@@ -245,9 +261,7 @@ def main():
     agent1 = A1(1)
 
     if args.method == "human":
-        from human import Human
-
-        agent2 = Human(2)
+        raise NotImplementedError("在服务器上不实现人类玩家")
     else:
         try:
             mod = importlib.import_module(f"{args.method}")

@@ -1,30 +1,179 @@
 <!DOCTYPE html>
 <html lang="zh-CN">
+
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>AI代码上传 - 五子棋对战平台</title>
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link
+        href="https://fonts.googleapis.com/css2?family=Noto+Sans+SC:wght@300;400;500;700&family=Roboto+Mono:wght@400;500&display=swap"
+        rel="stylesheet">
     <script src="https://unpkg.com/vue@3/dist/vue.global.js"></script>
     <style>
-        .upload-card {
-            border-radius: 15px;
-            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.1);
+        * {
+            font-family: 'Noto Sans SC', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
         }
+
+        body {
+            background: linear-gradient(135deg, #f8fafc 0%, #e2e8f0 100%);
+            min-height: 100vh;
+            padding: 20px;
+        }
+
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+        }
+
+        .navbar {
+            border-radius: 15px;
+            margin: 0 20px 20px 20px;
+            box-shadow: 0 4px 15px rgba(0, 0, 0, 0.1);
+        }
+
+        .navbar-brand {
+            font-weight: 700;
+            font-size: 1.25rem;
+        }
+
+        .upload-card {
+            border-radius: 20px;
+            box-shadow: 0 15px 35px rgba(0, 0, 0, 0.08);
+            border: 1px solid rgba(255, 255, 255, 0.2);
+            margin: 20px;
+            overflow: hidden;
+        }
+
+        .card-header {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%) !important;
+            border-radius: 20px 20px 0 0 !important;
+            padding: 1.5rem;
+        }
+
+        .card-header h4 {
+            font-weight: 600;
+            margin: 0;
+            text-align: center;
+        }
+
+        .card-body {
+            padding: 2rem;
+        }
+
+        .form-label {
+            font-weight: 500;
+            color: #2d3748;
+            margin-bottom: 0.75rem;
+        }
+
+        .form-control {
+            border-radius: 12px;
+            border: 2px solid #e2e8f0;
+            padding: 12px 16px;
+            font-size: 1rem;
+            transition: all 0.3s ease;
+        }
+
+        .form-control:focus {
+            border-color: #667eea;
+            box-shadow: 0 0 0 0.2rem rgba(102, 126, 234, 0.25);
+        }
+
         .code-preview {
-            background-color: #f8f9fa;
-            border: 1px solid #dee2e6;
-            border-radius: 8px;
-            font-family: 'Courier New', monospace;
+            background-color: #1a202c;
+            border: 2px solid #2d3748;
+            border-radius: 12px;
+            font-family: 'Roboto Mono', 'Courier New', monospace;
             font-size: 14px;
             max-height: 400px;
             overflow-y: auto;
+            color: #e2e8f0;
+            padding: 1rem;
         }
-        .navbar-brand {
-            font-weight: 700;
+
+        .btn {
+            border-radius: 12px;
+            padding: 12px 24px;
+            font-weight: 500;
+            font-size: 1rem;
+            transition: all 0.3s ease;
+        }
+
+        .btn-success {
+            background: linear-gradient(135deg, #48bb78 0%, #38a169 100%);
+            border: none;
+        }
+
+        .btn-success:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 8px 25px rgba(72, 187, 120, 0.4);
+        }
+
+        .btn-outline-light {
+            border: 2px solid rgba(255, 255, 255, 0.7);
+            border-radius: 8px;
+        }
+
+        .btn-outline-secondary {
+            border: 2px solid #718096;
+            color: #718096;
+            border-radius: 8px;
+        }
+
+        .alert {
+            border-radius: 12px;
+            border: none;
+            text-align: center;
+            font-weight: 500;
+            margin: 1.5rem 0;
+        }
+
+        .alert-info {
+            background: linear-gradient(135deg, #bee3f8 0%, #90cdf4 100%);
+            color: #2c5282;
+            border-left: 4px solid #3182ce;
+        }
+
+        .alert-info h5 {
+            font-weight: 600;
+            margin-bottom: 1rem;
+            text-align: center;
+        }
+
+        .alert-info ul {
+            text-align: left;
+            margin: 0;
+        }
+
+        .alert-info li {
+            margin-bottom: 0.5rem;
+        }
+
+        pre {
+            background: #2d3748;
+            color: #e2e8f0;
+            padding: 1rem;
+            border-radius: 8px;
+            font-family: 'Roboto Mono', monospace;
+            font-size: 0.9rem;
+            overflow-x: auto;
+            text-align: left;
+        }
+
+        .form-text {
+            color: #718096;
+            font-size: 0.9rem;
+            text-align: center;
+            margin-top: 0.5rem;
+        }
+
+        .navbar-text {
+            font-weight: 500;
         }
     </style>
 </head>
+
 <body>
     <div id="app">
         <!-- 导航栏 -->
@@ -35,6 +184,7 @@
                     <span class="navbar-text me-3">欢迎，学号：{{ currentUser }}</span>
                     <a href="rankings.html" class="nav-link me-3">排行榜</a>
                     <a href="results.html" class="nav-link me-3">我的记录</a>
+                    <a href="change-password.html" class="nav-link me-3">修改密码</a>
                     <button class="btn btn-outline-light btn-sm" @click="logout">登出</button>
                 </div>
             </div>
@@ -52,14 +202,8 @@
                             <form @submit.prevent="uploadFile">
                                 <div class="mb-3">
                                     <label for="agentFile" class="form-label">选择Python文件</label>
-                                    <input 
-                                        type="file" 
-                                        class="form-control" 
-                                        id="agentFile" 
-                                        @change="handleFileSelect"
-                                        accept=".py"
-                                        required
-                                    >
+                                    <input type="file" class="form-control" id="agentFile" @change="handleFileSelect"
+                                        accept=".py" required>
                                     <div class="form-text">
                                         仅支持.py文件，最大50KB。文件必须包含继承自Agent的类和make_move方法。
                                     </div>
@@ -68,20 +212,13 @@
                                 <!-- 代码预览 -->
                                 <div v-if="fileContent" class="mb-3">
                                     <label class="form-label">代码预览</label>
-                                    <textarea 
-                                        class="form-control code-preview" 
-                                        v-model="fileContent" 
-                                        readonly 
-                                        rows="15"
-                                    ></textarea>
+                                    <textarea class="form-control code-preview" v-model="fileContent" readonly
+                                        rows="15"></textarea>
                                 </div>
 
                                 <div class="d-grid">
-                                    <button 
-                                        type="submit" 
-                                        class="btn btn-success btn-lg"
-                                        :disabled="uploading || !selectedFile"
-                                    >
+                                    <button type="submit" class="btn btn-success btn-lg"
+                                        :disabled="uploading || !selectedFile">
                                         <span v-if="uploading" class="spinner-border spinner-border-sm me-2"></span>
                                         {{ uploading ? '上传中...' : '上传AI代码' }}
                                     </button>
@@ -111,7 +248,7 @@ class Search(Agent):
         # board是15x15的二维数组，0表示空位，1表示玩家1，2表示玩家2
         # 返回(row, col)元组表示下棋位置
         return (row, col)</code></pre>
-                                    
+
                                     <hr>
                                     <p><strong>打擂台规则：</strong></p>
                                     <ul class="mb-0">
@@ -231,12 +368,12 @@ class Search(Agent):
                 try {
                     const response = await fetch('/api/auth-status');
                     const data = await response.json();
-                    
+
                     if (!data.loggedIn) {
                         window.location.href = 'index.html';
                         return;
                     }
-                    
+
                     this.currentUser = data.studentId;
                 } catch (error) {
                     console.error('检查登录状态失败:', error);
@@ -246,4 +383,5 @@ class Search(Agent):
         }).mount('#app');
     </script>
 </body>
+
 </html>

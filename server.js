@@ -113,7 +113,7 @@ async function initializeDataFiles() {
 app.post('/api/login', async (req, res) => {
     try {
         const { studentId, password } = req.body;
-        
+
         if (!studentId || !password) {
             return res.status(400).json({ error: '学号和密码不能为空' });
         }
@@ -126,8 +126,8 @@ app.post('/api/login', async (req, res) => {
         }
 
         req.session.studentId = studentId;
-        res.json({ 
-            success: true, 
+        res.json({
+            success: true,
             message: '登录成功',
             studentId: studentId,
             name: student.name
@@ -147,9 +147,9 @@ app.post('/api/logout', (req, res) => {
 // 检查登录状态
 app.get('/api/auth-status', (req, res) => {
     if (req.session.studentId) {
-        res.json({ 
-            loggedIn: true, 
-            studentId: req.session.studentId 
+        res.json({
+            loggedIn: true,
+            studentId: req.session.studentId
         });
     } else {
         res.json({ loggedIn: false });
@@ -159,21 +159,26 @@ app.get('/api/auth-status', (req, res) => {
 // 修改密码
 app.post('/api/change-password', requireAuth, async (req, res) => {
     try {
-        const { oldPassword, newPassword } = req.body;
+        const { currentPassword, newPassword } = req.body;
         const studentId = req.session.studentId;
 
-        if (!oldPassword || !newPassword) {
-            return res.status(400).json({ error: '旧密码和新密码不能为空' });
+        if (!currentPassword || !newPassword) {
+            return res.status(400).json({ error: '当前密码和新密码不能为空' });
+        }
+
+        if (newPassword.length < 6) {
+            return res.status(400).json({ error: '新密码长度至少需要6位' });
         }
 
         const students = await readJsonFile('./data/students.json');
         const student = students[studentId];
 
-        if (!await bcrypt.compare(oldPassword, student.password)) {
-            return res.status(401).json({ error: '旧密码错误' });
+        if (!await bcrypt.compare(currentPassword, student.password)) {
+            return res.status(401).json({ error: '当前密码错误' });
         }
 
         students[studentId].password = await bcrypt.hash(newPassword, 10);
+        students[studentId].password_updated_at = new Date().toISOString();
         await writeJsonFile('./data/students.json', students);
 
         res.json({ success: true, message: '密码修改成功' });
@@ -195,7 +200,7 @@ app.post('/api/upload', requireAuth, upload.single('agentFile'), async (req, res
 
         // 验证文件内容
         const fileContent = await fs.readFile(filePath, 'utf8');
-        
+
         if (!fileContent.includes('class') || !fileContent.includes('make_move')) {
             await fs.unlink(filePath);
             return res.status(400).json({ error: '文件必须包含Agent类和make_move方法' });
@@ -214,14 +219,14 @@ app.post('/api/upload', requireAuth, upload.single('agentFile'), async (req, res
         // 如果是首次提交，开始打擂台
         const rankings = await readJsonFile('./data/rankings.json');
         const existingRank = rankings.rankings.find(r => r.student_id === studentId);
-        
+
         if (!existingRank) {
             // 新AI从第10名开始挑战
             await startChallengeProcess(studentId);
         }
 
-        res.json({ 
-            success: true, 
+        res.json({
+            success: true,
             message: 'AI代码上传成功，正在开始打擂台比赛...',
             filename: req.file.filename
         });
@@ -247,7 +252,7 @@ app.get('/api/my-results', requireAuth, async (req, res) => {
     try {
         const studentId = req.session.studentId;
         const matches = await readJsonFile('./data/matches.json');
-        
+
         const myMatches = matches.matches.filter(
             match => match.challenger === studentId || match.defender === studentId
         );
@@ -262,21 +267,21 @@ app.get('/api/my-results', requireAuth, async (req, res) => {
 // 打擂台核心功能
 async function startChallengeProcess(challengerStudentId) {
     console.log(`开始为学生 ${challengerStudentId} 进行打擂台挑战`);
-    
+
     const rankings = await readJsonFile('./data/rankings.json');
     let targetRank = Math.min(10, rankings.rankings.length + 1);
-    
+
     // 从目标排名开始向上挑战
     while (targetRank >= 1) {
         const defender = rankings.rankings.find(r => r.rank === targetRank);
-        
+
         if (!defender && targetRank <= rankings.rankings.length) {
             targetRank--;
             continue;
         }
 
         const result = await runMatch(challengerStudentId, defender ? defender.student_id : null);
-        
+
         if (result.winner === challengerStudentId) {
             // 挑战成功，更新排名
             await updateRankings(challengerStudentId, targetRank);
@@ -296,9 +301,9 @@ async function runMatch(challenger, defender) {
     return new Promise((resolve, reject) => {
         const challengerPath = `./submissions/agent_${challenger}.py`;
         const defenderPath = defender ? `./submissions/agent_${defender}.py` : './gomoku/agent.py';
-        
+
         console.log(`开始比赛: ${challenger} vs ${defender || 'default'}`);
-        
+
         const pythonProcess = spawn('python', [
             './gomoku/match.py',
             '--challenger', challengerPath,
@@ -335,10 +340,10 @@ async function runMatch(challenger, defender) {
                 }
 
                 const result = JSON.parse(stdout);
-                
+
                 // 记录比赛结果
                 await recordMatch(challenger, defender, result);
-                
+
                 resolve(result);
             } catch (error) {
                 console.error('解析比赛结果失败:', error, 'stdout:', stdout);
@@ -366,7 +371,7 @@ async function runMatch(challenger, defender) {
 // 记录比赛结果
 async function recordMatch(challenger, defender, result) {
     const matches = await readJsonFile('./data/matches.json');
-    
+
     const matchRecord = {
         id: `match_${Date.now()}`,
         challenger: challenger,
@@ -385,17 +390,17 @@ async function recordMatch(challenger, defender, result) {
 // 更新排行榜
 async function updateRankings(studentId, newRank) {
     const rankings = await readJsonFile('./data/rankings.json');
-    
+
     // 移除学生的旧排名
     rankings.rankings = rankings.rankings.filter(r => r.student_id !== studentId);
-    
+
     // 调整其他学生的排名
     rankings.rankings.forEach(r => {
         if (r.rank >= newRank) {
             r.rank++;
         }
     });
-    
+
     // 插入新排名
     rankings.rankings.push({
         rank: newRank,
@@ -405,24 +410,24 @@ async function updateRankings(studentId, newRank) {
         win_rate: 0,
         last_updated: new Date().toISOString()
     });
-    
+
     // 重新排序并重新编号
     rankings.rankings.sort((a, b) => a.rank - b.rank);
     rankings.rankings.forEach((r, index) => {
         r.rank = index + 1;
     });
-    
+
     await writeJsonFile('./data/rankings.json', rankings);
 }
 
 // 错误处理中间件
 app.use((error, req, res, next) => {
     console.error('服务器错误:', error);
-    
+
     if (error.code === 'LIMIT_FILE_SIZE') {
         return res.status(400).json({ error: '文件大小超过50KB限制' });
     }
-    
+
     res.status(500).json({ error: error.message || '服务器内部错误' });
 });
 
@@ -430,7 +435,7 @@ app.use((error, req, res, next) => {
 async function startServer() {
     try {
         await initializeDataFiles();
-        
+
         app.listen(PORT, () => {
             console.log(`五子棋对战平台已启动在端口 ${PORT}`);
             console.log(`访问 http://localhost:${PORT} 开始使用`);

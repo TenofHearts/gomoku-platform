@@ -1,266 +1,334 @@
+#!/usr/bin/env python3
+"""
+五子棋对战匹配系统
+用于执行两个AI Agent之间的多局比赛
+"""
+
 import argparse
-import json
-import sys
-import os
 import importlib.util
-import traceback
-from pathlib import Path
+import json
+import os
+import sys
+import time
+from datetime import datetime
+from concurrent.futures import ThreadPoolExecutor, as_completed
 
 # 添加gomoku目录到Python路径
-current_dir = Path(__file__).parent
-gomoku_dir = current_dir / 'gomoku'
-sys.path.insert(0, str(gomoku_dir))
+current_dir = os.path.dirname(os.path.abspath(__file__))
+gomoku_dir = os.path.join(current_dir, "gomoku")
+sys.path.insert(0, gomoku_dir)
 
-try:
-    from gomoku import play_game, create_board
-    from agent import Agent
-except ImportError:
-    # 如果导入失败，尝试直接导入
-    import sys
-    import os
-    sys.path.append(os.path.join(os.path.dirname(__file__), 'gomoku'))
-    from gomoku import play_game, create_board
-    from agent import Agent
+from gomoku import play_game
 
 
-class FileAgent(Agent):
-    """从文件加载的Agent包装器"""
-    def __init__(self, player, file_path):
-        super().__init__(player)
-        self.file_path = file_path
-        self.agent_instance = self._load_agent_from_file()
-    
-    def _load_agent_from_file(self):
-        """从文件加载Agent类"""
+class AgentLoader:
+    """Agent加载器，负责从文件中加载AI Agent"""
+
+    @staticmethod
+    def load_agent_from_file(file_path, player_id):
+        """
+        从文件中加载Agent
+
+        @param file_path: Agent文件路径
+        @param player_id: 玩家ID (1或2)
+        @return: Agent实例
+        """
+        if not os.path.exists(file_path):
+            raise FileNotFoundError(f"Agent文件不存在: {file_path}")
+
+        # 获取文件名（不含扩展名）作为模块名
+        module_name = os.path.splitext(os.path.basename(file_path))[0]
+
+        # 动态加载模块
+        spec = importlib.util.spec_from_file_location(module_name, file_path)
+        if spec is None:
+            raise ImportError(f"无法加载模块: {file_path}")
+
+        # 确保agent模块可用
         try:
-            spec = importlib.util.spec_from_file_location("user_agent", self.file_path)
-            module = importlib.util.module_from_spec(spec)
-            
-            # 确保agent.py在模块中可用
-            sys.modules['agent'] = importlib.import_module('agent')
-            
+            import gomoku.agent
+
+            sys.modules["gomoku.agent"] = gomoku.agent
+        except ImportError:
+            pass
+
+        module = importlib.util.module_from_spec(spec)
+
+        try:
             spec.loader.exec_module(module)
-            
-            # 查找继承自Agent的类
+        except Exception as e:
+            raise RuntimeError(f"执行模块失败: {e}")
+
+        # 查找Agent类 - 优先查找Search类，然后查找Agent类
+        agent_class = None
+
+        if hasattr(module, "Search"):
+            agent_class = getattr(module, "Search")
+        elif hasattr(module, "Agent"):
+            agent_class = getattr(module, "Agent")
+        else:
+            # 查找所有继承自Agent的类
+            from gomoku.agent import Agent as BaseAgent
+
             for attr_name in dir(module):
                 attr = getattr(module, attr_name)
-                if (isinstance(attr, type) and 
-                    issubclass(attr, Agent) and 
-                    attr != Agent):
-                    return attr(self.player)
-            
-            raise Exception("未找到继承自Agent的类")
-            
-        except Exception as e:
-            print(f"加载Agent失败: {e}", file=sys.stderr)
-            traceback.print_exc(file=sys.stderr)
-            # 返回随机Agent作为fallback
-            return Agent(self.player)
-    
-    def make_move(self, board):
-        """代理make_move调用"""
+                if (
+                    isinstance(attr, type)
+                    and issubclass(attr, BaseAgent)
+                    and attr != BaseAgent
+                ):
+                    agent_class = attr
+                    break
+
+            if agent_class is None:
+                raise AttributeError(f"在{file_path}中找不到Search类或继承自Agent的类")
+
+        # 创建Agent实例
         try:
-            return self.agent_instance.make_move(board)
+            return agent_class(player_id)
         except Exception as e:
-            print(f"Agent执行失败: {e}", file=sys.stderr)
-            # 返回随机移动作为fallback
-            return super().make_move(board)
+            raise RuntimeError(f"创建Agent实例失败: {e}")
 
 
-def run_multiple_games(agent1_path, agent2_path, num_games=10):
-    """运行多局比赛并返回结果"""
-    challenger_wins = 0
-    defender_wins = 0
-    
-    results = []
-    
-    for game_num in range(num_games):
+class MatchEngine:
+    """比赛引擎，负责执行比赛和记录结果"""
+
+    def __init__(self, board_size=15):
+        self.board_size = board_size
+
+    def _run_single_game(self, agent1_path, agent2_path, game_num):
+        """
+        执行单局比赛
+
+        @param agent1_path: 挑战者Agent文件路径
+        @param agent2_path: 防守者Agent文件路径
+        @param game_num: 比赛局数编号
+        @return: 单局比赛结果
+        """
+        start_time = time.time()
+
         try:
-            # 每局比赛创建新的Agent实例
-            if agent1_path.endswith('agent.py'):
-                # 默认随机Agent
-                agent1 = Agent(1)
+            # 每局比赛重新加载Agent以避免状态污染
+            agent1 = AgentLoader.load_agent_from_file(agent1_path, 1)
+            agent2 = AgentLoader.load_agent_from_file(agent2_path, 2)
+
+            # 交替先手，保证公平性
+            if game_num % 2 == 0:
+                # agent1先手
+                winner = play_game(agent1, agent2, self.board_size, silent=True)
             else:
-                agent1 = FileAgent(1, agent1_path)
-            
-            if agent2_path.endswith('agent.py'):
-                # 默认随机Agent
-                agent2 = Agent(2)
-            else:
-                agent2 = FileAgent(2, agent2_path)
-            
-            # 运行游戏
-            winner = play_single_game_silent(agent1, agent2)
-            
-            game_result = {
-                'game': game_num + 1,
-                'winner': winner,
-                'player1': 'challenger',
-                'player2': 'defender'
+                # agent2先手
+                winner = play_game(agent2, agent1, self.board_size, silent=True)
+                # 调整winner编号，因为agent2先手时编号变了
+                if winner == 1:
+                    winner = 2
+                elif winner == 2:
+                    winner = 1
+        except Exception as e:
+            # 异常情况下认为挑战者失败
+            winner = 2
+
+        end_time = time.time()
+        game_duration = end_time - start_time
+
+        return {
+            "game": game_num + 1,
+            "winner": winner,
+            "duration": game_duration,
+            "challenger_first": game_num % 2 == 0,
+        }
+
+    def run_match(
+        self, agent1_path, agent2_path, games=10, silent=True, max_workers=10
+    ):
+        """
+        执行一场比赛（并发版本）
+
+        @param agent1_path: 挑战者Agent文件路径
+        @param agent2_path: 防守者Agent文件路径
+        @param games: 比赛局数
+        @param silent: 是否静默模式
+        @param max_workers: 最大并发工作线程数
+        @return: 比赛结果字典
+        """
+        try:
+            if not silent:
+                print(
+                    f"开始比赛: {os.path.basename(agent1_path)} vs {os.path.basename(agent2_path)}"
+                )
+                print(f"比赛局数: {games}")
+                print("-" * 50)
+
+            # 记录比赛结果
+            results = {
+                "winner": None,
+                "challenger_wins": 0,
+                "defender_wins": 0,
+                "draws": 0,
+                "games": [],
+                "total_games": games,
+                "challenger_path": agent1_path,
+                "defender_path": agent2_path,
+                "timestamp": datetime.now().isoformat(),
+                "board_size": self.board_size,
+                "success": True,
             }
-            
-            if winner == 1:
-                challenger_wins += 1
-            elif winner == 2:
-                defender_wins += 1
-            # winner == 0 表示平局，不计入胜负
-            
-            results.append(game_result)
-            
+
+            # 使用线程池并发执行比赛
+            with ThreadPoolExecutor(max_workers=min(max_workers, games)) as executor:
+                # 提交所有比赛任务
+                future_to_game = {
+                    executor.submit(
+                        self._run_single_game, agent1_path, agent2_path, game_num
+                    ): game_num
+                    for game_num in range(games)
+                }
+
+                # 收集结果
+                completed_games = 0
+                for future in as_completed(future_to_game):
+                    game_num = future_to_game[future]
+                    try:
+                        game_result = future.result()
+                        completed_games += 1
+
+                        # 统计胜负
+                        winner = game_result["winner"]
+                        if winner == 0:  # 平局
+                            results["draws"] += 1
+                            result_text = "平局"
+                        elif winner == 1:
+                            # 挑战者获胜
+                            results["challenger_wins"] += 1
+                            result_text = f"{os.path.basename(agent1_path)} 获胜"
+                        else:
+                            # 防守者获胜
+                            results["defender_wins"] += 1
+                            result_text = f"{os.path.basename(agent2_path)} 获胜"
+
+                        if not silent:
+                            print(
+                                f"第 {game_result['game']} 局: {result_text} (耗时: {game_result['duration']:.2f}s) [{completed_games}/{games}]"
+                            )
+
+                        results["games"].append(game_result)
+
+                    except Exception as e:
+                        if not silent:
+                            print(f"第 {game_num + 1} 局执行失败: {e}")
+                        # 异常情况下认为防守者获胜
+                        results["defender_wins"] += 1
+                        results["games"].append(
+                            {
+                                "game": game_num + 1,
+                                "winner": 2,
+                                "duration": 0,
+                                "challenger_first": game_num % 2 == 0,
+                                "error": str(e),
+                            }
+                        )
+
+            # 按游戏编号排序结果
+            results["games"].sort(key=lambda x: x["game"])
+
+            # 计算胜率
+            results["challenger_win_rate"] = results["challenger_wins"] / games
+            results["defender_win_rate"] = results["defender_wins"] / games
+            results["draw_rate"] = results["draws"] / games
+
+            # 确定比赛赢家
+            if results["challenger_wins"] > results["defender_wins"]:
+                results["winner"] = "challenger"
+            elif results["defender_wins"] > results["challenger_wins"]:
+                results["winner"] = "defender"
+            else:
+                results["winner"] = "tie"
+
+            if not silent:
+                print("-" * 50)
+                print("比赛结果:")
+                print(
+                    f"{os.path.basename(agent1_path)}: {results['challenger_wins']} 胜"
+                )
+                print(f"{os.path.basename(agent2_path)}: {results['defender_wins']} 胜")
+                print(f"平局: {results['draws']} 局")
+                print(f"比赛赢家: {results['winner']}")
+
+            return results
+
         except Exception as e:
-            print(f"第{game_num + 1}局比赛出错: {e}", file=sys.stderr)
-            # 出错时认为挑战者失败
-            defender_wins += 1
-            results.append({
-                'game': game_num + 1,
-                'winner': 2,
-                'error': str(e)
-            })
-    
-    # 确定最终胜者
-    if challenger_wins > defender_wins:
-        winner = 'challenger'
-    elif defender_wins > challenger_wins:
-        winner = 'defender'
-    else:
-        winner = 'tie'
-    
-    return {
-        'winner': winner,
-        'challenger_wins': challenger_wins,
-        'defender_wins': defender_wins,
-        'total_games': num_games,
-        'games': results
-    }
-
-
-def play_single_game_silent(agent1, agent2, board_size=15):
-    """静默运行单局游戏，不输出过程信息"""
-    board = create_board(board_size)
-    current_player = 1
-    game_over = False
-    winner = None
-    
-    agents = {1: agent1, 2: agent2}
-    max_moves = board_size * board_size  # 防止无限循环
-    move_count = 0
-    
-    while not game_over and move_count < max_moves:
-        current_agent = agents[current_player]
-        
-        try:
-            move = current_agent.make_move(board.copy())
-            move_count += 1
-            
-            if move is None:
-                # Agent无法移动，对手获胜
-                winner = 3 - current_player
-                break
-            
-            row, col = move
-            
-            # 验证移动有效性
-            if not (0 <= row < board_size and 0 <= col < board_size and board[row][col] == 0):
-                # 无效移动，对手获胜
-                winner = 3 - current_player
-                break
-            
-            # 执行移动
-            board[row][col] = current_player
-            
-            # 检查胜利
-            if check_win_simple(board, row, col):
-                winner = current_player
-                break
-            
-            # 检查平局
-            if move_count >= board_size * board_size or is_board_full_simple(board):
-                winner = 0  # 平局
-                break
-            
-            # 切换玩家
-            current_player = 3 - current_player
-            
-        except Exception as e:
-            # Agent出错，对手获胜
-            print(f"玩家{current_player}出错: {e}", file=sys.stderr)
-            winner = 3 - current_player
-            break
-    
-    return winner
-
-
-def check_win_simple(board, row, col):
-    """简化的胜利检查"""
-    board_size = len(board)
-    player = board[row][col]
-    
-    directions = [(0, 1), (1, 0), (1, 1), (1, -1)]
-    
-    for dx, dy in directions:
-        count = 1
-        
-        # 正方向
-        x, y = row + dx, col + dy
-        while 0 <= x < board_size and 0 <= y < board_size and board[x][y] == player:
-            count += 1
-            x, y = x + dx, y + dy
-        
-        # 负方向
-        x, y = row - dx, col - dy
-        while 0 <= x < board_size and 0 <= y < board_size and board[x][y] == player:
-            count += 1
-            x, y = x - dx, y - dy
-        
-        if count >= 5:
-            return True
-    
-    return False
-
-
-def is_board_full_simple(board):
-    """简化的棋盘满检查"""
-    for row in board:
-        for cell in row:
-            if cell == 0:
-                return False
-    return True
+            error_result = {
+                "winner": "defender",
+                "challenger_wins": 0,
+                "defender_wins": games,
+                "total_games": games,
+                "error": str(e),
+                "challenger_path": agent1_path,
+                "defender_path": agent2_path,
+                "timestamp": datetime.now().isoformat(),
+                "success": False,
+            }
+            if not silent:
+                print(f"比赛执行失败: {e}")
+            return error_result
 
 
 def main():
-    parser = argparse.ArgumentParser(description='五子棋AI对战')
-    parser.add_argument('--challenger', required=True, help='挑战者AI文件路径')
-    parser.add_argument('--defender', required=True, help='应战者AI文件路径')
-    parser.add_argument('--games', type=int, default=10, help='比赛局数')
-    
+    """主函数"""
+    parser = argparse.ArgumentParser(description="五子棋AI对战系统")
+
+    parser.add_argument("--challenger", "-c", required=True, help="挑战者Agent文件路径")
+    parser.add_argument("--defender", "-d", required=True, help="防守者Agent文件路径")
+    parser.add_argument(
+        "--games", "-g", type=int, default=10, help="比赛局数 (默认: 10)"
+    )
+    parser.add_argument(
+        "--board-size", "-s", type=int, default=15, help="棋盘大小 (默认: 15)"
+    )
+    parser.add_argument("--output", "-o", help="结果输出文件路径 (JSON格式)")
+    parser.add_argument(
+        "--silent", action="store_true", help="静默模式，不打印比赛过程"
+    )
+    parser.add_argument(
+        "--workers", "-w", type=int, default=10, help="最大并发工作线程数 (默认: 10)"
+    )
+
     args = parser.parse_args()
-    
+
     # 验证文件存在
     if not os.path.exists(args.challenger):
-        print(f"挑战者文件不存在: {args.challenger}", file=sys.stderr)
+        print(f"错误: 挑战者文件不存在: {args.challenger}")
         sys.exit(1)
-    
+
     if not os.path.exists(args.defender):
-        print(f"应战者文件不存在: {args.defender}", file=sys.stderr)
+        print(f"错误: 防守者文件不存在: {args.defender}")
         sys.exit(1)
-    
-    # 运行比赛
-    try:
-        result = run_multiple_games(args.challenger, args.defender, args.games)
-        
-        # 输出JSON结果
-        print(json.dumps(result, ensure_ascii=False, indent=2))
-        
-    except Exception as e:
-        error_result = {
-            'winner': 'defender',
-            'challenger_wins': 0,
-            'defender_wins': args.games,
-            'total_games': args.games,
-            'error': str(e)
-        }
-        print(json.dumps(error_result, ensure_ascii=False, indent=2))
-        sys.exit(1)
+
+    # 创建比赛引擎
+    engine = MatchEngine(args.board_size)
+
+    # 执行比赛
+    results = engine.run_match(
+        args.challenger,
+        args.defender,
+        args.games,
+        args.silent,
+        min(args.workers, args.games),
+    )
+
+    # 输出结果
+    if args.output:
+        try:
+            with open(args.output, "w", encoding="utf-8") as f:
+                json.dump(results, f, ensure_ascii=False, indent=2)
+            if not args.silent:
+                print(f"\n结果已保存到: {args.output}")
+        except Exception as e:
+            print(f"保存结果失败: {e}")
+            sys.exit(1)
+    else:
+        # 如果没有指定输出文件，打印JSON到标准输出
+        print(json.dumps(results, ensure_ascii=False, indent=2))
 
 
 if __name__ == "__main__":

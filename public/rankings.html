@@ -1,40 +1,209 @@
 <!DOCTYPE html>
 <html lang="zh-CN">
+
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>排行榜 - 五子棋对战平台</title>
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link
+        href="https://fonts.googleapis.com/css2?family=Noto+Sans+SC:wght@300;400;500;700&family=Roboto+Mono:wght@400;500&display=swap"
+        rel="stylesheet">
     <script src="https://unpkg.com/vue@3/dist/vue.global.js"></script>
     <style>
-        .ranking-card {
-            border-radius: 15px;
-            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.1);
+        * {
+            font-family: 'Noto Sans SC', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
         }
+
+        body {
+            background: linear-gradient(135deg, #f8fafc 0%, #e2e8f0 100%);
+            min-height: 100vh;
+            padding: 20px;
+        }
+
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+        }
+
+        .navbar {
+            border-radius: 15px;
+            margin: 0 20px 20px 20px;
+            box-shadow: 0 4px 15px rgba(0, 0, 0, 0.1);
+        }
+
+        .navbar-brand {
+            font-weight: 700;
+            font-size: 1.25rem;
+        }
+
+        .ranking-card {
+            border-radius: 20px;
+            box-shadow: 0 15px 35px rgba(0, 0, 0, 0.08);
+            border: 1px solid rgba(255, 255, 255, 0.2);
+            margin: 20px;
+            overflow: hidden;
+        }
+
+        .card-header {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%) !important;
+            border-radius: 20px 20px 0 0 !important;
+            padding: 1.5rem;
+        }
+
+        .card-header h4 {
+            font-weight: 600;
+            margin: 0;
+            text-align: center;
+        }
+
         .rank-badge {
-            width: 40px;
-            height: 40px;
+            width: 45px;
+            height: 45px;
             border-radius: 50%;
             display: flex;
             align-items: center;
             justify-content: center;
             font-weight: bold;
             color: white;
+            font-size: 1.1rem;
+            margin: 0 auto;
         }
-        .rank-1 { background: linear-gradient(45deg, #ffd700, #ffed4e); color: #333; }
-        .rank-2 { background: linear-gradient(45deg, #c0c0c0, #e5e5e5); color: #333; }
-        .rank-3 { background: linear-gradient(45deg, #cd7f32, #daa520); }
-        .rank-other { background: linear-gradient(45deg, #6c757d, #868e96); }
-        .navbar-brand {
-            font-weight: 700;
+
+        .rank-1 {
+            background: linear-gradient(45deg, #ffd700, #ffed4e);
+            color: #333;
+            box-shadow: 0 4px 15px rgba(255, 215, 0, 0.4);
         }
+
+        .rank-2 {
+            background: linear-gradient(45deg, #c0c0c0, #e5e5e5);
+            color: #333;
+            box-shadow: 0 4px 15px rgba(192, 192, 192, 0.4);
+        }
+
+        .rank-3 {
+            background: linear-gradient(45deg, #cd7f32, #daa520);
+            box-shadow: 0 4px 15px rgba(205, 127, 50, 0.4);
+        }
+
+        .rank-other {
+            background: linear-gradient(45deg, #6c757d, #868e96);
+            box-shadow: 0 4px 15px rgba(108, 117, 125, 0.3);
+        }
+
         .stats-card {
-            border-radius: 10px;
+            border-radius: 15px;
             background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
             color: white;
+            margin: 20px;
+            border: none;
+            box-shadow: 0 8px 25px rgba(102, 126, 234, 0.3);
+            text-align: center;
+        }
+
+        .stats-card h3 {
+            font-weight: 700;
+            font-size: 2rem;
+        }
+
+        .stats-card small {
+            font-weight: 500;
+            opacity: 0.9;
+        }
+
+        .table {
+            margin: 0;
+        }
+
+        .table th {
+            background-color: #f8fafc;
+            border-bottom: 2px solid #e2e8f0;
+            color: #2d3748;
+            font-weight: 600;
+            text-align: center;
+            padding: 1rem 0.75rem;
+        }
+
+        .table td {
+            vertical-align: middle;
+            padding: 1rem 0.75rem;
+            text-align: center;
+            border-bottom: 1px solid #f1f5f9;
+        }
+
+        .table-hover tbody tr:hover {
+            background-color: #f8fafc;
+        }
+
+        .table-warning {
+            background-color: #fef3e2 !important;
+        }
+
+        .badge {
+            font-size: 0.9rem;
+            padding: 0.5rem 0.8rem;
+            border-radius: 8px;
+            font-weight: 500;
+        }
+
+        .progress {
+            height: 10px;
+            border-radius: 10px;
+            background-color: #e2e8f0;
+        }
+
+        .progress-bar {
+            border-radius: 10px;
+            background: linear-gradient(45deg, #48bb78, #38a169);
+        }
+
+        .alert-info {
+            background: linear-gradient(135deg, #bee3f8 0%, #90cdf4 100%);
+            color: #2c5282;
+            border: none;
+            border-radius: 15px;
+            border-left: 4px solid #3182ce;
+            margin: 20px;
+        }
+
+        .alert-info h6 {
+            font-weight: 600;
+            margin-bottom: 1rem;
+        }
+
+        .alert-info ul {
+            margin: 0;
+        }
+
+        .alert-info li {
+            margin-bottom: 0.5rem;
+        }
+
+        .btn {
+            border-radius: 8px;
+            font-weight: 500;
+            transition: all 0.3s ease;
+        }
+
+        .btn-outline-light {
+            border: 2px solid rgba(255, 255, 255, 0.7);
+        }
+
+        .btn-outline-light:hover {
+            transform: translateY(-1px);
+        }
+
+        .spinner-border {
+            margin: 0 auto;
+        }
+
+        .text-center p {
+            margin-bottom: 1rem;
         }
     </style>
 </head>
+
 <body>
     <div id="app">
         <!-- 导航栏 -->
@@ -45,6 +214,7 @@
                     <a href="index.html" class="nav-link me-3">登录</a>
                     <a href="upload.html" class="nav-link me-3" v-if="currentUser">上传AI</a>
                     <a href="results.html" class="nav-link me-3" v-if="currentUser">我的记录</a>
+                    <a href="change-password.html" class="nav-link me-3" v-if="currentUser">修改密码</a>
                     <span class="navbar-text me-3" v-if="currentUser">学号：{{ currentUser }}</span>
                     <button class="btn btn-outline-light btn-sm" @click="refreshRankings">刷新</button>
                 </div>
@@ -83,7 +253,8 @@
             <div class="row">
                 <div class="col-12">
                     <div class="ranking-card card">
-                        <div class="card-header bg-primary text-white d-flex justify-content-between align-items-center">
+                        <div
+                            class="card-header bg-primary text-white d-flex justify-content-between align-items-center">
                             <h4 class="mb-0">🏆 AI排行榜</h4>
                             <small>实时更新</small>
                         </div>
@@ -124,8 +295,8 @@
                                             </td>
                                             <td>
                                                 <strong>{{ player.student_id }}</strong>
-                                                <span v-if="player.student_id === currentUser" 
-                                                      class="badge bg-primary ms-2">我</span>
+                                                <span v-if="player.student_id === currentUser"
+                                                    class="badge bg-primary ms-2">我</span>
                                             </td>
                                             <td>
                                                 <span class="badge bg-success">{{ player.wins }}</span>
@@ -136,8 +307,8 @@
                                             <td>
                                                 <div class="d-flex align-items-center">
                                                     <div class="progress flex-grow-1 me-2" style="height: 8px;">
-                                                        <div class="progress-bar" 
-                                                             :style="{ width: player.win_rate * 100 + '%' }">
+                                                        <div class="progress-bar"
+                                                            :style="{ width: player.win_rate * 100 + '%' }">
                                                         </div>
                                                     </div>
                                                     <small>{{ (player.win_rate * 100).toFixed(1) }}%</small>
@@ -199,7 +370,7 @@
                     try {
                         const response = await fetch('/api/rankings');
                         const data = await response.json();
-                        
+
                         this.rankings = data.rankings || [];
                         this.calculateStats();
                     } catch (error) {
@@ -209,14 +380,14 @@
                     }
                 },
                 calculateStats() {
-                    this.totalMatches = this.rankings.reduce((sum, player) => 
+                    this.totalMatches = this.rankings.reduce((sum, player) =>
                         sum + player.wins + player.losses, 0);
-                    
-                    this.topWinRate = this.rankings.length > 0 ? 
+
+                    this.topWinRate = this.rankings.length > 0 ?
                         Math.max(...this.rankings.map(p => p.win_rate * 100)) : 0;
-                    
+
                     if (this.rankings.length > 0) {
-                        const latestUpdate = Math.max(...this.rankings.map(p => 
+                        const latestUpdate = Math.max(...this.rankings.map(p =>
                             new Date(p.last_updated).getTime()));
                         this.lastUpdateTime = this.formatTime(new Date(latestUpdate));
                     }
@@ -240,9 +411,9 @@
                     }
                 },
                 formatTime(date) {
-                    return date.toLocaleTimeString('zh-CN', { 
-                        hour: '2-digit', 
-                        minute: '2-digit' 
+                    return date.toLocaleTimeString('zh-CN', {
+                        hour: '2-digit',
+                        minute: '2-digit'
                     });
                 },
                 async refreshRankings() {
@@ -263,7 +434,7 @@
             async mounted() {
                 await this.checkAuthStatus();
                 await this.loadRankings();
-                
+
                 // 每30秒自动刷新一次排行榜
                 setInterval(() => {
                     this.loadRankings();
@@ -272,4 +443,5 @@
         }).mount('#app');
     </script>
 </body>
+
 </html>

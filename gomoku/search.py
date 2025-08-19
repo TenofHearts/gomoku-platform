@@ -337,13 +337,13 @@ class Search(Agent):
         ):
             blocks += 1
         if count >= 5:
-            return 100000
+            return 1000000
         elif count == 4:
-            return 100000 if blocks == 0 else (50000 if blocks == 1 else 0)
+            return 100000 if blocks == 0 else (50000 if blocks == 1 else 100)
         elif count == 3:
-            return 60000 if blocks == 0 else (1000 if blocks == 1 else 0)
+            return 60000 if blocks == 0 else (1000 if blocks == 1 else 10)
         elif count == 2:
-            return 100 if blocks == 0 else (10 if blocks == 1 else 0)
+            return 100 if blocks == 0 else (10 if blocks == 1 else 5)
         else:
             return 1
 
