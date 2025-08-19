@@ -10,6 +10,73 @@ const { spawn } = require('child_process');
 const app = express();
 const PORT = process.env.PORT || 3000;
 
+// 日志功能：创建日志目录
+async function ensureLogDirectory() {
+    try {
+        await fs.access('./logs');
+    } catch {
+        await fs.mkdir('./logs', { recursive: true });
+    }
+}
+
+// 日志功能：记录错误到文件
+async function logError(error, context = '') {
+    try {
+        await ensureLogDirectory();
+
+        const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
+        const logFileName = `error_${timestamp}.log`;
+        const logPath = path.join('./logs', logFileName);
+
+        const logContent = {
+            timestamp: new Date().toISOString(),
+            context: context,
+            error: {
+                message: error.message,
+                stack: error.stack,
+                name: error.name
+            },
+            process: {
+                pid: process.pid,
+                memory: process.memoryUsage(),
+                version: process.version
+            }
+        };
+
+        await fs.writeFile(logPath, JSON.stringify(logContent, null, 2), 'utf8');
+        console.error(`错误已记录到: ${logPath}`);
+
+        return logPath;
+    } catch (logError) {
+        console.error('记录错误日志失败:', logError);
+    }
+}
+
+// 日志功能：记录一般信息
+async function logInfo(message, data = null) {
+    try {
+        await ensureLogDirectory();
+
+        const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
+        const logFileName = `info_${timestamp}.log`;
+        const logPath = path.join('./logs', logFileName);
+
+        const logContent = {
+            timestamp: new Date().toISOString(),
+            level: 'INFO',
+            message: message,
+            data: data
+        };
+
+        await fs.writeFile(logPath, JSON.stringify(logContent, null, 2), 'utf8');
+        console.log(`信息已记录到: ${logPath}`);
+
+        return logPath;
+    } catch (error) {
+        console.error('记录信息日志失败:', error);
+    }
+}
+
 // 中间件配置
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
@@ -133,7 +200,7 @@ app.post('/api/login', async (req, res) => {
             name: student.name
         });
     } catch (error) {
-        console.error('登录错误:', error);
+        await logError(error, `登录失败 - 学号: ${req.body.studentId}`);
         res.status(500).json({ error: '服务器内部错误' });
     }
 });
@@ -183,7 +250,7 @@ app.post('/api/change-password', requireAuth, async (req, res) => {
 
         res.json({ success: true, message: '密码修改成功' });
     } catch (error) {
-        console.error('修改密码错误:', error);
+        await logError(error, `修改密码失败 - 学号: ${req.session.studentId}`);
         res.status(500).json({ error: '服务器内部错误' });
     }
 });
@@ -216,14 +283,8 @@ app.post('/api/upload', requireAuth, upload.single('agentFile'), async (req, res
         };
         await writeJsonFile('./data/submissions.json', submissions);
 
-        // 如果是首次提交，开始打擂台
-        const rankings = await readJsonFile('./data/rankings.json');
-        const existingRank = rankings.rankings.find(r => r.student_id === studentId);
-
-        if (!existingRank) {
-            // 新AI从第10名开始挑战
-            await startChallengeProcess(studentId);
-        }
+        // 每次提交都开始打擂台
+        await startChallengeProcess(studentId);
 
         res.json({
             success: true,
@@ -231,7 +292,7 @@ app.post('/api/upload', requireAuth, upload.single('agentFile'), async (req, res
             filename: req.file.filename
         });
     } catch (error) {
-        console.error('上传错误:', error);
+        await logError(error, `上传AI代码失败 - 学号: ${req.session.studentId}, 文件: ${req.file ? req.file.filename : 'unknown'}`);
         res.status(500).json({ error: error.message || '服务器内部错误' });
     }
 });
@@ -240,9 +301,23 @@ app.post('/api/upload', requireAuth, upload.single('agentFile'), async (req, res
 app.get('/api/rankings', async (req, res) => {
     try {
         const rankings = await readJsonFile('./data/rankings.json');
+
+        // 更新所有学生的统计信息
+        for (let i = 0; i < rankings.rankings.length; i++) {
+            const player = rankings.rankings[i];
+            const playerStats = await calculatePlayerStats(player.student_id);
+            player.wins = playerStats.wins;
+            player.losses = playerStats.losses;
+            player.win_rate = playerStats.winRate;
+            player.last_updated = new Date().toISOString();
+        }
+
+        // 保存更新后的排行榜
+        await writeJsonFile('./data/rankings.json', rankings);
+
         res.json(rankings);
     } catch (error) {
-        console.error('获取排行榜错误:', error);
+        await logError(error, '获取排行榜失败');
         res.status(500).json({ error: '服务器内部错误' });
     }
 });
@@ -259,40 +334,108 @@ app.get('/api/my-results', requireAuth, async (req, res) => {
 
         res.json({ matches: myMatches });
     } catch (error) {
-        console.error('获取比赛记录错误:', error);
+        await logError(error, `获取比赛记录失败 - 学号: ${req.session.studentId}`);
         res.status(500).json({ error: '服务器内部错误' });
     }
 });
 
 // 打擂台核心功能
 async function startChallengeProcess(challengerStudentId) {
-    console.log(`开始为学生 ${challengerStudentId} 进行打擂台挑战`);
+    try {
+        console.log(`开始为学生 ${challengerStudentId} 进行打擂台挑战`);
+        await logInfo(`开始打擂台挑战`, { challengerStudentId });
 
-    const rankings = await readJsonFile('./data/rankings.json');
-    let targetRank = Math.min(10, rankings.rankings.length + 1);
+        const rankings = await readJsonFile('./data/rankings.json');
+        const existingRank = rankings.rankings.find(r => r.student_id === challengerStudentId);
 
-    // 从目标排名开始向上挑战
-    while (targetRank >= 1) {
-        const defender = rankings.rankings.find(r => r.rank === targetRank);
-
-        if (!defender && targetRank <= rankings.rankings.length) {
-            targetRank--;
-            continue;
-        }
-
-        const result = await runMatch(challengerStudentId, defender ? defender.student_id : null);
-
-        if (result.winner === challengerStudentId) {
-            // 挑战成功，更新排名
-            await updateRankings(challengerStudentId, targetRank);
-            console.log(`学生 ${challengerStudentId} 成功挑战第 ${targetRank} 名`);
-            targetRank--; // 继续向上挑战
+        // 确定起始挑战位置
+        let targetRank;
+        if (rankings.rankings.length < 10) {
+            // 如果排行榜人数少于10人，从最后一名开始向上挑战
+            targetRank = rankings.rankings.length;
+            if (targetRank === 0) targetRank = 1; // 如果排行榜为空，直接成为第1名
         } else {
-            // 挑战失败，插入到当前位置后一名
-            await updateRankings(challengerStudentId, targetRank + 1);
-            console.log(`学生 ${challengerStudentId} 挑战失败，排名第 ${targetRank + 1} 名`);
-            break;
+            // 如果排行榜已有10人或更多，从第10名开始挑战
+            targetRank = 10;
+        }        // 从目标排名开始向上挑战
+        while (targetRank >= 1) {
+            const defender = rankings.rankings.find(r => r.rank === targetRank);
+
+            // 特殊处理：如果排行榜为空，直接成为第1名
+            if (rankings.rankings.length === 0) {
+                await updateRankings(challengerStudentId, 1);
+                console.log(`学生 ${challengerStudentId} 成为排行榜第1名！`);
+                await logInfo(`成为首位`, {
+                    challenger: challengerStudentId,
+                    rank: 1
+                });
+                break;
+            }
+
+            // 如果defender不存在
+            if (!defender) {
+                if (rankings.rankings.length < 10) {
+                    // 排行榜人数少于10时，如果没有对应排名的defender，直接插入到末尾
+                    const newRank = rankings.rankings.length + 1;
+                    await updateRankings(challengerStudentId, newRank);
+                    console.log(`学生 ${challengerStudentId} 直接进入排行榜第 ${newRank} 名`);
+                    await logInfo(`直接入榜`, {
+                        challenger: challengerStudentId,
+                        rank: newRank,
+                        originalRank: existingRank ? existingRank.rank : '无'
+                    });
+                    break;
+                } else {
+                    // 排行榜满员时，跳过空位置
+                    targetRank--;
+                    continue;
+                }
+            }
+
+            // 避免和自己比赛
+            if (defender && defender.student_id === challengerStudentId) {
+                targetRank--;
+                continue;
+            }
+
+            // 执行比赛（此时defender肯定存在，因为前面已经处理了不存在的情况）
+            const result = await runMatch(challengerStudentId, defender.student_id);
+
+            if (result.winner === challengerStudentId) {
+                // 挑战成功，更新排名
+                await updateRankings(challengerStudentId, targetRank);
+                console.log(`学生 ${challengerStudentId} 成功挑战第 ${targetRank} 名`);
+                await logInfo(`挑战成功`, {
+                    challenger: challengerStudentId,
+                    defender: defender.student_id,
+                    rank: targetRank,
+                    originalRank: existingRank ? existingRank.rank : '无'
+                });
+
+                // 如果已经是第1名，停止挑战
+                if (targetRank === 1) {
+                    console.log(`学生 ${challengerStudentId} 已成为第1名，挑战结束！`);
+                    break;
+                }
+
+                targetRank--; // 继续向上挑战
+            } else {
+                // 挑战失败，插入到当前位置后一名
+                const finalRank = targetRank + 1;
+                await updateRankings(challengerStudentId, finalRank);
+                console.log(`学生 ${challengerStudentId} 挑战失败，排名第 ${finalRank} 名`);
+                await logInfo(`挑战失败`, {
+                    challenger: challengerStudentId,
+                    defender: defender.student_id,
+                    finalRank: finalRank,
+                    originalRank: existingRank ? existingRank.rank : '无'
+                });
+                break;
+            }
         }
+    } catch (error) {
+        await logError(error, `打擂台挑战失败 - 挑战者: ${challengerStudentId}`);
+        console.error(`打擂台挑战失败:`, error);
     }
 }
 
@@ -305,13 +448,13 @@ async function runMatch(challenger, defender) {
         console.log(`开始比赛: ${challenger} vs ${defender || 'default'}`);
 
         const pythonProcess = spawn('python', [
-            './gomoku/match.py',
+            './match.py',
             '--challenger', challengerPath,
             '--defender', defenderPath,
-            '--games', '10'
+            '--games', '9',
+            '--silent'
         ], {
-            stdio: ['pipe', 'pipe', 'pipe'],
-            timeout: 30000 // 30秒超时
+            stdio: ['pipe', 'pipe', 'pipe']
         });
 
         let stdout = '';
@@ -328,12 +471,22 @@ async function runMatch(challenger, defender) {
         pythonProcess.on('close', async (code) => {
             try {
                 if (code !== 0) {
-                    console.error(`比赛进程异常退出，代码: ${code}, 错误: ${stderr}`);
+                    const errorMsg = `比赛进程异常退出，代码: ${code}, 错误: ${stderr}`;
+                    console.error(errorMsg);
+                    console.error(`Python进程详细信息:`);
+                    console.error(`- 挑战者路径: ${challengerPath}`);
+                    console.error(`- 防守者路径: ${defenderPath}`);
+                    console.error(`- 退出代码: ${code}`);
+                    console.error(`- 标准输出: ${stdout || '(无输出)'}`);
+                    console.error(`- 错误输出: ${stderr || '(无错误输出)'}`);
+
+                    await logError(new Error(errorMsg), `比赛执行失败 - ${challenger} vs ${defender || 'default'} - 详细信息: 退出代码=${code}, stdout=${stdout}, stderr=${stderr}`);
+
                     // 如果比赛进程异常，认为挑战者失败
                     resolve({
                         winner: defender || 'default',
                         challenger_wins: 0,
-                        defender_wins: 10,
+                        defender_wins: 9,
                         error: `比赛进程异常: ${stderr}`
                     });
                     return;
@@ -346,22 +499,43 @@ async function runMatch(challenger, defender) {
 
                 resolve(result);
             } catch (error) {
-                console.error('解析比赛结果失败:', error, 'stdout:', stdout);
+                const errorMsg = `解析比赛结果失败: ${error.message}`;
+                console.error(errorMsg);
+                console.error(`解析错误详细信息:`);
+                console.error(`- 挑战者: ${challenger}`);
+                console.error(`- 防守者: ${defender || 'default'}`);
+                console.error(`- 标准输出长度: ${stdout.length}`);
+                console.error(`- 标准输出内容: ${stdout.substring(0, 1000)}${stdout.length > 1000 ? '...(截断)' : ''}`);
+                console.error(`- 错误输出: ${stderr || '(无错误输出)'}`);
+                console.error(`- 解析错误: ${error.stack}`);
+
+                await logError(error, `解析比赛结果失败 - ${challenger} vs ${defender || 'default'} - stdout长度=${stdout.length}, stderr=${stderr}, 原始输出=${stdout}`);
+
                 resolve({
                     winner: defender || 'default',
                     challenger_wins: 0,
-                    defender_wins: 10,
+                    defender_wins: 9,
                     error: '解析结果失败'
                 });
             }
         });
 
-        pythonProcess.on('error', (error) => {
-            console.error('启动比赛进程失败:', error);
+        pythonProcess.on('error', async (error) => {
+            console.error('启动比赛进程失败:', error.message);
+            console.error(`进程启动错误详细信息:`);
+            console.error(`- 错误类型: ${error.name}`);
+            console.error(`- 错误代码: ${error.code || '未知'}`);
+            console.error(`- 错误信号: ${error.signal || '未知'}`);
+            console.error(`- 完整错误: ${error.stack}`);
+            console.error(`- 挑战者路径: ${challengerPath}`);
+            console.error(`- 防守者路径: ${defenderPath}`);
+
+            await logError(error, `启动比赛进程失败 - ${challenger} vs ${defender || 'default'} - 错误代码=${error.code}, 信号=${error.signal}`);
+
             resolve({
                 winner: defender || 'default',
                 challenger_wins: 0,
-                defender_wins: 10,
+                defender_wins: 9,
                 error: '启动进程失败'
             });
         });
@@ -377,7 +551,7 @@ async function recordMatch(challenger, defender, result) {
         challenger: challenger,
         defender: defender || 'default',
         winner: result.winner,
-        games_played: 10,
+        games_played: 9,
         challenger_wins: result.challenger_wins,
         defender_wins: result.defender_wins,
         timestamp: new Date().toISOString()
@@ -385,6 +559,34 @@ async function recordMatch(challenger, defender, result) {
 
     matches.matches.push(matchRecord);
     await writeJsonFile('./data/matches.json', matches);
+}
+
+// 计算学生的胜败统计
+async function calculatePlayerStats(studentId) {
+    const matches = await readJsonFile('./data/matches.json');
+    let wins = 0;
+    let losses = 0;
+
+    matches.matches.forEach(match => {
+        if (match.challenger === studentId) {
+            if (match.winner === 'challenger' || match.winner === studentId) {
+                wins++;
+            } else {
+                losses++;
+            }
+        } else if (match.defender === studentId) {
+            if (match.winner === 'defender' || match.winner === studentId) {
+                wins++;
+            } else {
+                losses++;
+            }
+        }
+    });
+
+    const totalGames = wins + losses;
+    const winRate = totalGames > 0 ? wins / totalGames : 0;
+
+    return { wins, losses, winRate };
 }
 
 // 更新排行榜
@@ -401,28 +603,40 @@ async function updateRankings(studentId, newRank) {
         }
     });
 
+    // 计算学生的实际胜败统计
+    const stats = await calculatePlayerStats(studentId);
+
     // 插入新排名
     rankings.rankings.push({
         rank: newRank,
         student_id: studentId,
-        wins: 0,
-        losses: 0,
-        win_rate: 0,
+        wins: stats.wins,
+        losses: stats.losses,
+        win_rate: stats.winRate,
         last_updated: new Date().toISOString()
     });
 
-    // 重新排序并重新编号
+    // 重新排序并重新编号，同时更新所有学生的统计信息
     rankings.rankings.sort((a, b) => a.rank - b.rank);
-    rankings.rankings.forEach((r, index) => {
-        r.rank = index + 1;
-    });
+
+    // 更新所有学生的统计信息
+    for (let i = 0; i < rankings.rankings.length; i++) {
+        const player = rankings.rankings[i];
+        const playerStats = await calculatePlayerStats(player.student_id);
+        player.rank = i + 1;
+        player.wins = playerStats.wins;
+        player.losses = playerStats.losses;
+        player.win_rate = playerStats.winRate;
+        player.last_updated = new Date().toISOString();
+    }
 
     await writeJsonFile('./data/rankings.json', rankings);
 }
 
 // 错误处理中间件
-app.use((error, req, res, next) => {
-    console.error('服务器错误:', error);
+app.use(async (error, req, res, next) => {
+    const context = `HTTP ${req.method} ${req.url} - IP: ${req.ip}`;
+    await logError(error, context);
 
     if (error.code === 'LIMIT_FILE_SIZE') {
         return res.status(400).json({ error: '文件大小超过50KB限制' });
@@ -434,16 +648,33 @@ app.use((error, req, res, next) => {
 // 启动服务器
 async function startServer() {
     try {
+        await ensureLogDirectory();
         await initializeDataFiles();
 
         app.listen(PORT, () => {
             console.log(`五子棋对战平台已启动在端口 ${PORT}`);
             console.log(`访问 http://localhost:${PORT} 开始使用`);
+            console.log(`日志文件保存在 ./logs 目录下`);
         });
     } catch (error) {
+        await logError(error, '启动服务器失败');
         console.error('启动服务器失败:', error);
         process.exit(1);
     }
 }
+
+// 处理未捕获的异常
+process.on('uncaughtException', async (error) => {
+    await logError(error, '未捕获的异常');
+    console.error('未捕获的异常:', error);
+    process.exit(1);
+});
+
+// 处理未处理的Promise拒绝
+process.on('unhandledRejection', async (reason, promise) => {
+    const error = reason instanceof Error ? reason : new Error(String(reason));
+    await logError(error, `未处理的Promise拒绝 - Promise: ${promise}`);
+    console.error('未处理的Promise拒绝:', reason);
+});
 
 startServer();

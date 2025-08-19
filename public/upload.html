@@ -30,11 +30,19 @@
             border-radius: 15px;
             margin: 0 20px 20px 20px;
             box-shadow: 0 4px 15px rgba(0, 0, 0, 0.1);
+            min-height: 60px;
         }
 
         .navbar-brand {
             font-weight: 700;
             font-size: 1.25rem;
+        }
+
+        .navbar .btn {
+            height: 36px;
+            padding: 6px 12px;
+            font-size: 14px;
+            line-height: 1.5;
         }
 
         .upload-card {
@@ -170,6 +178,17 @@
 
         .navbar-text {
             font-weight: 500;
+        }
+
+        .navbar-nav {
+            align-items: center;
+        }
+
+        .navbar-nav .nav-link,
+        .navbar-text {
+            display: flex;
+            align-items: center;
+            height: 40px;
         }
     </style>
 </head>

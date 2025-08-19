@@ -30,11 +30,19 @@
             border-radius: 15px;
             margin: 0 20px 20px 20px;
             box-shadow: 0 4px 15px rgba(0, 0, 0, 0.1);
+            min-height: 60px;
         }
 
         .navbar-brand {
             font-weight: 700;
             font-size: 1.25rem;
+        }
+
+        .navbar .btn {
+            height: 36px;
+            padding: 6px 12px;
+            font-size: 14px;
+            line-height: 1.5;
         }
 
         .ranking-card {
@@ -201,6 +209,17 @@
         .text-center p {
             margin-bottom: 1rem;
         }
+
+        .navbar-nav {
+            align-items: center;
+        }
+
+        .navbar-nav .nav-link,
+        .navbar-text {
+            display: flex;
+            align-items: center;
+            height: 40px;
+        }
     </style>
 </head>
 
@@ -216,7 +235,9 @@
                     <a href="results.html" class="nav-link me-3" v-if="currentUser">我的记录</a>
                     <a href="change-password.html" class="nav-link me-3" v-if="currentUser">修改密码</a>
                     <span class="navbar-text me-3" v-if="currentUser">学号：{{ currentUser }}</span>
-                    <button class="btn btn-outline-light btn-sm" @click="refreshRankings">刷新</button>
+                    <button class="btn btn-outline-light btn-sm" @click="logout" v-if="currentUser">登出</button>
+                    <button class="btn btn-outline-light btn-sm" @click="refreshRankings"
+                        v-if="!currentUser">刷新</button>
                 </div>
             </div>
         </nav>
@@ -418,6 +439,15 @@
                 },
                 async refreshRankings() {
                     await this.loadRankings();
+                },
+                async logout() {
+                    try {
+                        await fetch('/api/logout', { method: 'POST' });
+                        window.location.href = 'index.html';
+                    } catch (error) {
+                        console.error('登出错误:', error);
+                        window.location.href = 'index.html';
+                    }
                 },
                 async checkAuthStatus() {
                     try {
