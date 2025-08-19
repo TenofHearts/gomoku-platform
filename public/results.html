@@ -1,0 +1,319 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>我的比赛记录 - 五子棋对战平台</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <script src="https://unpkg.com/vue@3/dist/vue.global.js"></script>
+    <style>
+        .results-card {
+            border-radius: 15px;
+            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.1);
+        }
+        .navbar-brand {
+            font-weight: 700;
+        }
+        .match-result {
+            border-radius: 8px;
+            border-left: 4px solid;
+        }
+        .match-win {
+            border-left-color: #28a745;
+            background-color: #f8fff9;
+        }
+        .match-loss {
+            border-left-color: #dc3545;
+            background-color: #fff8f8;
+        }
+        .stats-card {
+            border-radius: 10px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+        }
+        .win-rate-circle {
+            width: 60px;
+            height: 60px;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-weight: bold;
+            font-size: 14px;
+        }
+    </style>
+</head>
+<body>
+    <div id="app">
+        <!-- 导航栏 -->
+        <nav class="navbar navbar-expand-lg navbar-dark bg-primary">
+            <div class="container">
+                <a class="navbar-brand" href="#">🏁 五子棋AI对战平台</a>
+                <div class="navbar-nav ms-auto">
+                    <span class="navbar-text me-3">欢迎，学号：{{ currentUser }}</span>
+                    <a href="upload.html" class="nav-link me-3">上传AI</a>
+                    <a href="rankings.html" class="nav-link me-3">排行榜</a>
+                    <button class="btn btn-outline-light btn-sm" @click="logout">登出</button>
+                </div>
+            </div>
+        </nav>
+
+        <div class="container mt-4">
+            <!-- 统计概览 -->
+            <div class="row mb-4">
+                <div class="col-md-3">
+                    <div class="card stats-card text-center p-3">
+                        <h3 class="mb-1">{{ myStats.totalMatches }}</h3>
+                        <small>总比赛场次</small>
+                    </div>
+                </div>
+                <div class="col-md-3">
+                    <div class="card stats-card text-center p-3">
+                        <h3 class="mb-1">{{ myStats.wins }}</h3>
+                        <small>胜利次数</small>
+                    </div>
+                </div>
+                <div class="col-md-3">
+                    <div class="card stats-card text-center p-3">
+                        <h3 class="mb-1">{{ myStats.losses }}</h3>
+                        <small>失败次数</small>
+                    </div>
+                </div>
+                <div class="col-md-3">
+                    <div class="card stats-card text-center p-3 d-flex flex-row align-items-center justify-content-center">
+                        <div class="win-rate-circle me-2" 
+                             :style="{ backgroundColor: getWinRateColor(myStats.winRate) }">
+                            {{ myStats.winRate }}%
+                        </div>
+                        <small>胜率</small>
+                    </div>
+                </div>
+            </div>
+
+            <div class="row">
+                <div class="col-12">
+                    <div class="results-card card">
+                        <div class="card-header bg-primary text-white d-flex justify-content-between align-items-center">
+                            <h4 class="mb-0">📊 比赛历史记录</h4>
+                            <button class="btn btn-outline-light btn-sm" @click="loadMatches">刷新</button>
+                        </div>
+                        <div class="card-body">
+                            <!-- 加载状态 -->
+                            <div v-if="loading" class="text-center p-5">
+                                <div class="spinner-border text-primary" role="status">
+                                    <span class="visually-hidden">加载中...</span>
+                                </div>
+                                <p class="mt-2 text-muted">正在加载比赛记录...</p>
+                            </div>
+
+                            <!-- 比赛记录列表 -->
+                            <div v-else-if="matches.length > 0">
+                                <div v-for="match in matches" :key="match.id" 
+                                     class="match-result p-3 mb-3"
+                                     :class="getMatchResultClass(match)">
+                                    <div class="row align-items-center">
+                                        <div class="col-md-3">
+                                            <h6 class="mb-1">
+                                                <span :class="getBadgeClass(match)">
+                                                    {{ getMatchResult(match) }}
+                                                </span>
+                                            </h6>
+                                            <small class="text-muted">{{ formatDate(match.timestamp) }}</small>
+                                        </div>
+                                        <div class="col-md-4">
+                                            <div class="d-flex align-items-center">
+                                                <strong>{{ currentUser }}</strong>
+                                                <span class="mx-2">VS</span>
+                                                <strong>{{ getOpponent(match) }}</strong>
+                                            </div>
+                                            <small class="text-muted">
+                                                {{ match.challenger === currentUser ? '挑战方' : '应战方' }}
+                                            </small>
+                                        </div>
+                                        <div class="col-md-3">
+                                            <div class="text-center">
+                                                <div class="fw-bold">比分</div>
+                                                <div class="h5 mb-0">
+                                                    {{ getMyScore(match) }} : {{ getOpponentScore(match) }}
+                                                </div>
+                                                <small class="text-muted">/ 10局</small>
+                                            </div>
+                                        </div>
+                                        <div class="col-md-2">
+                                            <div class="text-center">
+                                                <div class="progress mb-1" style="height: 8px;">
+                                                    <div class="progress-bar" 
+                                                         :class="getProgressBarClass(match)"
+                                                         :style="{ width: getMyWinPercentage(match) + '%' }">
+                                                    </div>
+                                                </div>
+                                                <small>{{ getMyWinPercentage(match) }}% 胜率</small>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <!-- 分页（如果需要的话） -->
+                                <div v-if="matches.length >= 10" class="text-center mt-4">
+                                    <small class="text-muted">显示最近 {{ matches.length }} 场比赛</small>
+                                </div>
+                            </div>
+
+                            <!-- 空状态 -->
+                            <div v-else class="text-center p-5">
+                                <h5 class="text-muted">暂无比赛记录</h5>
+                                <p class="text-muted">您还没有参与任何比赛</p>
+                                <a href="upload.html" class="btn btn-primary">上传AI代码开始比赛</a>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 说明信息 -->
+            <div class="row mt-4">
+                <div class="col-12">
+                    <div class="alert alert-info">
+                        <h6><i class="bi bi-info-circle"></i> 比赛记录说明</h6>
+                        <ul class="mb-0">
+                            <li><strong>挑战方：</strong>您主动发起的挑战</li>
+                            <li><strong>应战方：</strong>其他AI挑战您的比赛</li>
+                            <li><strong>比赛规则：</strong>每场比赛进行10局，胜局多者获胜</li>
+                            <li><strong>排名影响：</strong>胜利可提升排名，失败可能降低排名</li>
+                        </ul>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const { createApp } = Vue;
+
+        createApp({
+            data() {
+                return {
+                    currentUser: '',
+                    matches: [],
+                    loading: true,
+                    myStats: {
+                        totalMatches: 0,
+                        wins: 0,
+                        losses: 0,
+                        winRate: 0
+                    }
+                };
+            },
+            methods: {
+                async loadMatches() {
+                    this.loading = true;
+                    try {
+                        const response = await fetch('/api/my-results');
+                        const data = await response.json();
+                        
+                        this.matches = data.matches.sort((a, b) => 
+                            new Date(b.timestamp) - new Date(a.timestamp));
+                        this.calculateStats();
+                    } catch (error) {
+                        console.error('加载比赛记录失败:', error);
+                    } finally {
+                        this.loading = false;
+                    }
+                },
+                calculateStats() {
+                    this.myStats.totalMatches = this.matches.length;
+                    this.myStats.wins = this.matches.filter(m => m.winner === this.currentUser).length;
+                    this.myStats.losses = this.myStats.totalMatches - this.myStats.wins;
+                    this.myStats.winRate = this.myStats.totalMatches > 0 ? 
+                        Math.round((this.myStats.wins / this.myStats.totalMatches) * 100) : 0;
+                },
+                getMatchResult(match) {
+                    return match.winner === this.currentUser ? '胜利' : '失败';
+                },
+                getMatchResultClass(match) {
+                    return match.winner === this.currentUser ? 'match-win' : 'match-loss';
+                },
+                getBadgeClass(match) {
+                    return match.winner === this.currentUser ? 
+                        'badge bg-success' : 'badge bg-danger';
+                },
+                getProgressBarClass(match) {
+                    return match.winner === this.currentUser ? 
+                        'bg-success' : 'bg-danger';
+                },
+                getOpponent(match) {
+                    return match.challenger === this.currentUser ? 
+                        match.defender : match.challenger;
+                },
+                getMyScore(match) {
+                    return match.challenger === this.currentUser ? 
+                        match.challenger_wins : match.defender_wins;
+                },
+                getOpponentScore(match) {
+                    return match.challenger === this.currentUser ? 
+                        match.defender_wins : match.challenger_wins;
+                },
+                getMyWinPercentage(match) {
+                    const myScore = this.getMyScore(match);
+                    return Math.round((myScore / 10) * 100);
+                },
+                getWinRateColor(winRate) {
+                    if (winRate >= 80) return '#28a745';
+                    if (winRate >= 60) return '#ffc107';
+                    if (winRate >= 40) return '#fd7e14';
+                    return '#dc3545';
+                },
+                formatDate(dateString) {
+                    const date = new Date(dateString);
+                    const now = new Date();
+                    const diffMs = now - date;
+                    const diffMins = Math.floor(diffMs / 60000);
+                    const diffHours = Math.floor(diffMs / 3600000);
+                    const diffDays = Math.floor(diffMs / 86400000);
+
+                    if (diffMins < 60) {
+                        return `${diffMins}分钟前`;
+                    } else if (diffHours < 24) {
+                        return `${diffHours}小时前`;
+                    } else if (diffDays < 7) {
+                        return `${diffDays}天前`;
+                    } else {
+                        return date.toLocaleDateString('zh-CN') + ' ' + 
+                               date.toLocaleTimeString('zh-CN', { 
+                                   hour: '2-digit', 
+                                   minute: '2-digit' 
+                               });
+                    }
+                },
+                async logout() {
+                    try {
+                        await fetch('/api/logout', { method: 'POST' });
+                        window.location.href = 'index.html';
+                    } catch (error) {
+                        console.error('登出错误:', error);
+                        window.location.href = 'index.html';
+                    }
+                }
+            },
+            async mounted() {
+                // 检查登录状态
+                try {
+                    const response = await fetch('/api/auth-status');
+                    const data = await response.json();
+                    
+                    if (!data.loggedIn) {
+                        window.location.href = 'index.html';
+                        return;
+                    }
+                    
+                    this.currentUser = data.studentId;
+                    await this.loadMatches();
+                } catch (error) {
+                    console.error('检查登录状态失败:', error);
+                    window.location.href = 'index.html';
+                }
+            }
+        }).mount('#app');
+    </script>
+</body>
+</html>
