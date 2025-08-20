@@ -256,7 +256,7 @@ def main():
     board_size = args.size
     print(f"创建 {board_size}x{board_size} 的棋盘")
 
-    from search import Search as A1
+    from agent import Agent as A1
 
     agent1 = A1(1)
 

@@ -345,7 +345,7 @@
                                                 <div class="h5 mb-0">
                                                     {{ getMyScore(match) }} : {{ getOpponentScore(match) }}
                                                 </div>
-                                                <small class="text-muted">/ 10局</small>
+                                                <small class="text-muted">/ {{ match.games_played }}局</small>
                                             </div>
                                         </div>
                                         <div class="col-md-2">
@@ -386,7 +386,7 @@
                         <ul class="mb-0">
                             <li><strong>挑战方：</strong>您主动发起的挑战</li>
                             <li><strong>应战方：</strong>其他AI挑战您的比赛</li>
-                            <li><strong>比赛规则：</strong>每场比赛进行10局，胜局多者获胜</li>
+                            <li><strong>比赛规则：</strong>每场比赛进行9局，胜局多者获胜</li>
                             <li><strong>排名影响：</strong>胜利可提升排名，失败可能降低排名</li>
                         </ul>
                     </div>
@@ -463,7 +463,8 @@
                 },
                 getMyWinPercentage(match) {
                     const myScore = this.getMyScore(match);
-                    return Math.round((myScore / 10) * 100);
+                    const totalGames = match.games_played || 9; // 如果没有games_played字段，默认为9
+                    return Math.round((myScore / totalGames) * 100);
                 },
                 getWinRateColor(winRate) {
                     if (winRate >= 80) return '#28a745';

@@ -401,7 +401,7 @@ async function startChallengeProcess(challengerStudentId) {
             // 执行比赛（此时defender肯定存在，因为前面已经处理了不存在的情况）
             const result = await runMatch(challengerStudentId, defender.student_id);
 
-            if (result.winner === challengerStudentId) {
+            if (result.winner === 'challenger') {
                 // 挑战成功，更新排名
                 await updateRankings(challengerStudentId, targetRank);
                 console.log(`学生 ${challengerStudentId} 成功挑战第 ${targetRank} 名`);
@@ -546,11 +546,24 @@ async function runMatch(challenger, defender) {
 async function recordMatch(challenger, defender, result) {
     const matches = await readJsonFile('./data/matches.json');
 
+    // 将winner从"challenger"/"defender"转换为实际的学生ID
+    let actualWinner;
+    if (result.winner === 'challenger') {
+        actualWinner = challenger;
+    } else if (result.winner === 'defender') {
+        actualWinner = defender || 'default';
+    } else if (result.winner === 'tie') {
+        actualWinner = 'tie';
+    } else {
+        // 保持原值（可能是学生ID）
+        actualWinner = result.winner;
+    }
+
     const matchRecord = {
         id: `match_${Date.now()}`,
         challenger: challenger,
         defender: defender || 'default',
-        winner: result.winner,
+        winner: actualWinner,
         games_played: 9,
         challenger_wins: result.challenger_wins,
         defender_wins: result.defender_wins,
@@ -568,18 +581,13 @@ async function calculatePlayerStats(studentId) {
     let losses = 0;
 
     matches.matches.forEach(match => {
-        if (match.challenger === studentId) {
-            if (match.winner === 'challenger' || match.winner === studentId) {
+        if (match.challenger === studentId || match.defender === studentId) {
+            if (match.winner === studentId) {
                 wins++;
-            } else {
+            } else if (match.winner !== 'tie') {
                 losses++;
             }
-        } else if (match.defender === studentId) {
-            if (match.winner === 'defender' || match.winner === studentId) {
-                wins++;
-            } else {
-                losses++;
-            }
+            // 如果是tie，既不计胜也不计负
         }
     });
 

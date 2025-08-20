@@ -230,14 +230,12 @@
             <div class="container">
                 <a class="navbar-brand" href="#">🏁 五子棋AI对战平台</a>
                 <div class="navbar-nav ms-auto">
-                    <a href="index.html" class="nav-link me-3">登录</a>
                     <a href="upload.html" class="nav-link me-3" v-if="currentUser">上传AI</a>
                     <a href="results.html" class="nav-link me-3" v-if="currentUser">我的记录</a>
                     <a href="change-password.html" class="nav-link me-3" v-if="currentUser">修改密码</a>
                     <span class="navbar-text me-3" v-if="currentUser">学号：{{ currentUser }}</span>
                     <button class="btn btn-outline-light btn-sm" @click="logout" v-if="currentUser">登出</button>
-                    <button class="btn btn-outline-light btn-sm" @click="refreshRankings"
-                        v-if="!currentUser">刷新</button>
+                    <a href="index.html" class="btn btn-outline-light btn-sm" v-if="!currentUser">登录</a>
                 </div>
             </div>
         </nav>
@@ -277,7 +275,7 @@
                         <div
                             class="card-header bg-primary text-white d-flex justify-content-between align-items-center">
                             <h4 class="mb-0">🏆 AI排行榜</h4>
-                            <small>实时更新</small>
+                            <button class="btn btn-outline-light btn-sm" @click="refreshRankings">刷新</button>
                         </div>
                         <div class="card-body p-0">
                             <!-- 加载状态 -->
@@ -360,9 +358,9 @@
                     <div class="alert alert-info">
                         <h6><i class="bi bi-info-circle"></i> 排行榜说明</h6>
                         <ul class="mb-0">
-                            <li><strong>新AI挑战规则：</strong>从第10名开始，每场比赛10局，胜局多者获胜</li>
+                            <li><strong>新AI挑战规则：</strong>从第10名开始，每场比赛9局，胜局多者获胜</li>
                             <li><strong>胜率计算：</strong>胜率 = 胜场数 / (胜场数 + 败场数)</li>
-                            <li><strong>排名更新：</strong>挑战成功后自动上升，失败则插入到挑战目标后一名</li>
+                            <li><strong>排名更新：</strong>挑战成功后自动上升</li>
                             <li><strong>实时更新：</strong>点击"刷新"按钮查看最新排名</li>
                         </ul>
                     </div>
@@ -464,11 +462,6 @@
             async mounted() {
                 await this.checkAuthStatus();
                 await this.loadRankings();
-
-                // 每30秒自动刷新一次排行榜
-                setInterval(() => {
-                    this.loadRankings();
-                }, 30000);
             }
         }).mount('#app');
     </script>
