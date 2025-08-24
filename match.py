@@ -115,18 +115,53 @@ class MatchEngine:
             # 交替先手，保证公平性
             if game_num % 2 == 0:
                 # agent1先手
-                winner = play_game(agent1, agent2, self.board_size, silent=True)
+                winner, game_record = play_game(
+                    agent1, agent2, self.board_size, silent=True, record_moves=True
+                )
             else:
                 # agent2先手
-                winner = play_game(agent2, agent1, self.board_size, silent=True)
+                winner, game_record = play_game(
+                    agent2, agent1, self.board_size, silent=True, record_moves=True
+                )
                 # 调整winner编号，因为agent2先手时编号变了
                 if winner == 1:
                     winner = 2
                 elif winner == 2:
                     winner = 1
+                # 调整游戏记录中的玩家编号
+                for move in game_record["moves"]:
+                    if move["player"] == 1:
+                        move["player"] = 2
+                    elif move["player"] == 2:
+                        move["player"] = 1
+                # 调整玩家统计信息
+                if "player_statistics" in game_record:
+                    old_stats = game_record["player_statistics"]
+                    game_record["player_statistics"] = {
+                        1: old_stats.get(
+                            2, {"moves": 0, "total_time": 0, "average_time": 0}
+                        ),
+                        2: old_stats.get(
+                            1, {"moves": 0, "total_time": 0, "average_time": 0}
+                        ),
+                    }
         except Exception as e:
             # 异常情况下认为挑战者失败
             winner = 2
+            game_record = {
+                "error": str(e),
+                "board_size": self.board_size,
+                "start_time": start_time,
+                "end_time": time.time(),
+                "duration": time.time() - start_time,
+                "winner": 2,
+                "moves": [],
+                "total_moves": 0,
+                "player_statistics": {
+                    1: {"moves": 0, "total_time": 0, "average_time": 0},
+                    2: {"moves": 0, "total_time": 0, "average_time": 0},
+                },
+            }
 
         end_time = time.time()
         game_duration = end_time - start_time
@@ -136,6 +171,7 @@ class MatchEngine:
             "winner": winner,
             "duration": game_duration,
             "challenger_first": game_num % 2 == 0,
+            "game_record": game_record,
         }
 
     def run_match(
