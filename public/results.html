@@ -4,8 +4,9 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>我的比赛记录 - 五子棋对战平台</title>
+    <title>我的提交记录 - 五子棋对战平台</title>
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.0/font/bootstrap-icons.css" rel="stylesheet">
     <link
         href="https://fonts.googleapis.com/css2?family=Noto+Sans+SC:wght@300;400;500;700&family=Roboto+Mono:wght@400;500&display=swap"
         rel="stylesheet">
@@ -69,18 +70,32 @@
             padding: 2rem;
         }
 
-        .match-result {
+        .submission-card {
             border-radius: 15px;
-            border-left: 4px solid;
+            border: 2px solid #e2e8f0;
             padding: 1.5rem;
             margin-bottom: 1.5rem;
             transition: all 0.3s ease;
-            box-shadow: 0 4px 15px rgba(0, 0, 0, 0.05);
+            background: linear-gradient(135deg, #ffffff 0%, #f8fafc 100%);
         }
 
-        .match-result:hover {
-            transform: translateY(-2px);
-            box-shadow: 0 8px 25px rgba(0, 0, 0, 0.1);
+        .submission-card:hover {
+            transform: translateY(-3px);
+            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.1);
+            border-color: #667eea;
+        }
+
+        .submission-active {
+            border-color: #48bb78 !important;
+            background: linear-gradient(135deg, #f0fff4 0%, #c6f6d5 100%);
+        }
+
+        .match-result {
+            border-radius: 10px;
+            border-left: 4px solid;
+            padding: 1rem;
+            margin-bottom: 1rem;
+            font-size: 0.9rem;
         }
 
         .match-win {
@@ -113,76 +128,52 @@
             opacity: 0.9;
         }
 
-        .win-rate-circle {
-            width: 65px;
-            height: 65px;
+        .rank-badge {
+            width: 35px;
+            height: 35px;
             border-radius: 50%;
             display: flex;
             align-items: center;
             justify-content: center;
             font-weight: bold;
-            font-size: 1rem;
-            box-shadow: 0 4px 15px rgba(0, 0, 0, 0.2);
+            color: white;
+            font-size: 0.9rem;
             margin: 0 auto;
         }
 
+        .rank-1 {
+            background: linear-gradient(45deg, #ffd700, #ffed4e);
+            color: #333;
+        }
+
+        .rank-2 {
+            background: linear-gradient(45deg, #c0c0c0, #e5e5e5);
+            color: #333;
+        }
+
+        .rank-3 {
+            background: linear-gradient(45deg, #cd7f32, #daa520);
+        }
+
+        .rank-other {
+            background: linear-gradient(45deg, #6c757d, #868e96);
+        }
+
         .badge {
-            font-size: 0.9rem;
-            padding: 0.5rem 1rem;
-            border-radius: 10px;
-            font-weight: 600;
-        }
-
-        .badge.bg-success {
-            background: linear-gradient(45deg, #48bb78, #38a169) !important;
-        }
-
-        .badge.bg-danger {
-            background: linear-gradient(45deg, #f56565, #e53e3e) !important;
-        }
-
-        .badge.bg-primary {
-            background: linear-gradient(45deg, #667eea, #764ba2) !important;
+            font-size: 0.8rem;
+            padding: 0.4rem 0.7rem;
+            border-radius: 8px;
+            font-weight: 500;
         }
 
         .progress {
-            height: 12px;
-            border-radius: 12px;
+            height: 8px;
+            border-radius: 8px;
             background-color: #e2e8f0;
         }
 
         .progress-bar {
-            border-radius: 12px;
-        }
-
-        .bg-success {
-            background: linear-gradient(45deg, #48bb78, #38a169) !important;
-        }
-
-        .bg-danger {
-            background: linear-gradient(45deg, #f56565, #e53e3e) !important;
-        }
-
-        .alert-info {
-            background: linear-gradient(135deg, #bee3f8 0%, #90cdf4 100%);
-            color: #2c5282;
-            border: none;
-            border-radius: 15px;
-            border-left: 4px solid #3182ce;
-            margin: 20px;
-        }
-
-        .alert-info h6 {
-            font-weight: 600;
-            margin-bottom: 1rem;
-        }
-
-        .alert-info ul {
-            margin: 0;
-        }
-
-        .alert-info li {
-            margin-bottom: 0.5rem;
+            border-radius: 8px;
         }
 
         .btn {
@@ -209,20 +200,13 @@
             box-shadow: 0 8px 25px rgba(102, 126, 234, 0.4);
         }
 
-        .spinner-border {
-            margin: 0 auto;
+        .accordion-button {
+            border-radius: 12px !important;
+            font-weight: 500;
         }
 
-        .text-center p {
-            margin-bottom: 1rem;
-        }
-
-        .fw-bold {
-            font-weight: 600 !important;
-        }
-
-        .h5 {
-            font-weight: 600;
+        .accordion-body {
+            background-color: #f8fafc;
         }
 
         .text-muted {
@@ -244,8 +228,11 @@
             height: 40px;
         }
 
-        small {
-            font-size: 0.9rem;
+        code {
+            background: linear-gradient(135deg, #2d3748 0%, #4a5568 100%);
+            color: #e2e8f0;
+            padding: 0.2rem 0.5rem;
+            border-radius: 5px;
         }
     </style>
 </head>
@@ -271,30 +258,26 @@
             <div class="row mb-4">
                 <div class="col-md-3">
                     <div class="card stats-card text-center p-3">
-                        <h3 class="mb-1">{{ myStats.totalMatches }}</h3>
+                        <h3 class="mb-1">{{ submissions.length }}</h3>
+                        <small>总提交数</small>
+                    </div>
+                </div>
+                <div class="col-md-3">
+                    <div class="card stats-card text-center p-3">
+                        <h3 class="mb-1">{{ overallStats.totalMatches }}</h3>
                         <small>总比赛场次</small>
                     </div>
                 </div>
                 <div class="col-md-3">
                     <div class="card stats-card text-center p-3">
-                        <h3 class="mb-1">{{ myStats.wins }}</h3>
-                        <small>胜利次数</small>
+                        <h3 class="mb-1">{{ overallStats.wins }}</h3>
+                        <small>总胜利次数</small>
                     </div>
                 </div>
                 <div class="col-md-3">
                     <div class="card stats-card text-center p-3">
-                        <h3 class="mb-1">{{ myStats.losses }}</h3>
-                        <small>失败次数</small>
-                    </div>
-                </div>
-                <div class="col-md-3">
-                    <div
-                        class="card stats-card text-center p-3 d-flex flex-row align-items-center justify-content-center">
-                        <div class="win-rate-circle me-2"
-                            :style="{ backgroundColor: getWinRateColor(myStats.winRate) }">
-                            {{ myStats.winRate }}%
-                        </div>
-                        <small>胜率</small>
+                        <h3 class="mb-1">{{ overallStats.winRate }}%</h3>
+                        <small>整体胜率</small>
                     </div>
                 </div>
             </div>
@@ -304,8 +287,8 @@
                     <div class="results-card card">
                         <div
                             class="card-header bg-primary text-white d-flex justify-content-between align-items-center">
-                            <h4 class="mb-0">📊 比赛历史记录</h4>
-                            <button class="btn btn-outline-light btn-sm" @click="loadMatches">刷新</button>
+                            <h4 class="mb-0">🤖 我的AI提交历史</h4>
+                            <button class="btn btn-outline-light btn-sm" @click="loadSubmissions">刷新</button>
                         </div>
                         <div class="card-body">
                             <!-- 加载状态 -->
@@ -313,88 +296,161 @@
                                 <div class="spinner-border text-primary" role="status">
                                     <span class="visually-hidden">加载中...</span>
                                 </div>
-                                <p class="mt-2 text-muted">正在加载比赛记录...</p>
+                                <p class="mt-2 text-muted">正在加载提交记录...</p>
                             </div>
 
-                            <!-- 比赛记录列表 -->
-                            <div v-else-if="matches.length > 0">
-                                <div v-for="match in matches" :key="match.id" class="match-result p-3 mb-3"
-                                    :class="getMatchResultClass(match)">
+                            <!-- 提交记录列表 -->
+                            <div v-else-if="submissions.length > 0">
+                                <div v-for="submission in submissions" :key="submission.submission_id"
+                                    class="submission-card"
+                                    :class="{ 'submission-active': submission.status === 'active' }">
                                     <div class="row align-items-center">
-                                        <div class="col-md-3">
-                                            <h6 class="mb-1">
-                                                <span :class="getBadgeClass(match)">
-                                                    {{ getMatchResult(match) }}
-                                                </span>
-                                            </h6>
-                                            <small class="text-muted">{{ formatDate(match.timestamp) }}</small>
-                                        </div>
-                                        <div class="col-md-4">
+                                        <div class="col-md-2">
                                             <div class="d-flex align-items-center">
-                                                <strong>{{ currentUser }}</strong>
-                                                <span class="mx-2">VS</span>
-                                                <strong>{{ getOpponent(match) }}</strong>
-                                            </div>
-                                            <small class="text-muted">
-                                                {{ match.challenger === currentUser ? '挑战方' : '应战方' }}
-                                            </small>
-                                        </div>
-                                        <div class="col-md-3">
-                                            <div class="text-center">
-                                                <div class="fw-bold">比分</div>
-                                                <div class="h5 mb-0">
-                                                    {{ getMyScore(match) }} : {{ getOpponentScore(match) }}
+                                                <div v-if="submission.current_rank" :class="[
+                                                    'rank-badge me-3',
+                                                    submission.current_rank === 1 ? 'rank-1' :
+                                                    submission.current_rank === 2 ? 'rank-2' :
+                                                    submission.current_rank === 3 ? 'rank-3' : 'rank-other'
+                                                ]">
+                                                    {{ submission.current_rank }}
                                                 </div>
-                                                <small class="text-muted">/ {{ match.games_played }}局</small>
+                                                <div v-else class="me-3" style="width: 35px;"></div>
+                                                <div>
+                                                    <h6 class="mb-1">
+                                                        <code>{{ submission.submission_id }}</code>
+                                                    </h6>
+                                                    <small class="text-muted">{{ formatDate(submission.upload_time)
+                                                        }}</small>
+                                                </div>
                                             </div>
                                         </div>
                                         <div class="col-md-2">
                                             <div class="text-center">
-                                                <div class="progress mb-1" style="height: 8px;">
-                                                    <div class="progress-bar" :class="getProgressBarClass(match)"
-                                                        :style="{ width: getMyWinPercentage(match) + '%' }">
+                                                <div class="fw-bold">状态</div>
+                                                <span :class="['badge', getStatusBadgeClass(submission.status)]">
+                                                    {{ getStatusText(submission.status) }}
+                                                </span>
+                                            </div>
+                                        </div>
+                                        <div class="col-md-2">
+                                            <div class="text-center">
+                                                <div class="fw-bold">排名</div>
+                                                <div class="h6 mb-0">
+                                                    {{ submission.current_rank ? `#${submission.current_rank}` : '未上榜'
+                                                    }}
+                                                </div>
+                                            </div>
+                                        </div>
+                                        <div class="col-md-2">
+                                            <div class="text-center">
+                                                <div class="fw-bold">战绩</div>
+                                                <div class="d-flex justify-content-center align-items-center">
+                                                    <span class="badge bg-success me-1">{{ submission.stats.wins
+                                                        }}胜</span>
+                                                    <span class="badge bg-danger">{{ submission.stats.losses }}负</span>
+                                                </div>
+                                            </div>
+                                        </div>
+                                        <div class="col-md-2">
+                                            <div class="text-center">
+                                                <div class="fw-bold">胜率</div>
+                                                <div class="progress mb-1">
+                                                    <div class="progress-bar bg-success"
+                                                        :style="{ width: (submission.stats.winRate * 100) + '%' }">
                                                     </div>
                                                 </div>
-                                                <small>{{ getMyWinPercentage(match) }}% 胜率</small>
+                                                <small>{{ (submission.stats.winRate * 100).toFixed(1) }}%</small>
+                                            </div>
+                                        </div>
+                                        <div class="col-md-1">
+                                            <div class="text-center">
+                                                <div class="fw-bold">操作</div>
+                                                <button @click="downloadSubmission(submission.submission_id)"
+                                                    class="btn btn-outline-primary btn-sm" title="下载代码">
+                                                    <i class="bi bi-download"></i>
+                                                </button>
                                             </div>
                                         </div>
                                     </div>
-                                </div>
 
-                                <!-- 分页（如果需要的话） -->
-                                <div v-if="matches.length >= 10" class="text-center mt-4">
-                                    <small class="text-muted">显示最近 {{ matches.length }} 场比赛</small>
+                                    <!-- 展开的比赛记录 -->
+                                    <div class="mt-3">
+                                        <div class="accordion">
+                                            <div class="accordion-item">
+                                                <h2 class="accordion-header">
+                                                    <button class="accordion-button collapsed" type="button"
+                                                        :data-bs-target="'#matches-' + submission.submission_id"
+                                                        @click="loadSubmissionMatches(submission.submission_id)">
+                                                        查看比赛记录 ({{ getSubmissionMatches(submission.submission_id).length
+                                                        }} 场)
+                                                    </button>
+                                                </h2>
+                                                <div :id="'matches-' + submission.submission_id"
+                                                    class="accordion-collapse collapse">
+                                                    <div class="accordion-body">
+                                                        <div
+                                                            v-if="getSubmissionMatches(submission.submission_id).length > 0">
+                                                            <div v-for="match in getSubmissionMatches(submission.submission_id)"
+                                                                :key="match.id" class="match-result"
+                                                                :class="getMatchResultClass(match, submission.submission_id)">
+                                                                <div class="row align-items-center">
+                                                                    <div class="col-md-2">
+                                                                        <span
+                                                                            :class="getBadgeClass(match, submission.submission_id)">
+                                                                            {{ getMatchResult(match,
+                                                                            submission.submission_id) }}
+                                                                        </span>
+                                                                    </div>
+                                                                    <div class="col-md-4">
+                                                                        <div class="d-flex align-items-center">
+                                                                            <strong>{{ submission.submission_id
+                                                                                }}</strong>
+                                                                            <span class="mx-2">VS</span>
+                                                                            <strong>{{ getOpponent(match,
+                                                                                submission.submission_id) }}</strong>
+                                                                        </div>
+                                                                    </div>
+                                                                    <div class="col-md-3">
+                                                                        <div class="text-center">
+                                                                            <strong>{{ getMyScore(match,
+                                                                                submission.submission_id) }} : {{
+                                                                                getOpponentScore(match,
+                                                                                submission.submission_id) }}</strong>
+                                                                        </div>
+                                                                    </div>
+                                                                    <div class="col-md-3">
+                                                                        <small class="text-muted">{{
+                                                                            formatDate(match.timestamp) }}</small>
+                                                                    </div>
+                                                                </div>
+                                                            </div>
+                                                        </div>
+                                                        <div v-else class="text-center text-muted">
+                                                            该提交暂无比赛记录
+                                                        </div>
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </div>
                                 </div>
                             </div>
 
                             <!-- 空状态 -->
                             <div v-else class="text-center p-5">
-                                <h5 class="text-muted">暂无比赛记录</h5>
-                                <p class="text-muted">您还没有参与任何比赛</p>
-                                <a href="upload.html" class="btn btn-primary">上传AI代码开始比赛</a>
+                                <h5 class="text-muted">暂无提交记录</h5>
+                                <p class="text-muted">您还没有上传任何AI代码</p>
+                                <a href="upload.html" class="btn btn-primary">立即上传AI代码</a>
                             </div>
                         </div>
-                    </div>
-                </div>
-            </div>
-
-            <!-- 说明信息 -->
-            <div class="row mt-4">
-                <div class="col-12">
-                    <div class="alert alert-info">
-                        <h6><i class="bi bi-info-circle"></i> 比赛记录说明</h6>
-                        <ul class="mb-0">
-                            <li><strong>挑战方：</strong>您主动发起的挑战</li>
-                            <li><strong>应战方：</strong>其他AI挑战您的比赛</li>
-                            <li><strong>比赛规则：</strong>每场比赛进行9局，胜局多者获胜</li>
-                            <li><strong>排名影响：</strong>胜利可提升排名，失败可能降低排名</li>
-                        </ul>
                     </div>
                 </div>
             </div>
         </div>
     </div>
 
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
     <script>
         const { createApp } = Vue;
 
@@ -402,9 +458,10 @@
             data() {
                 return {
                     currentUser: '',
+                    submissions: [],
                     matches: [],
                     loading: true,
-                    myStats: {
+                    overallStats: {
                         totalMatches: 0,
                         wins: 0,
                         losses: 0,
@@ -413,64 +470,106 @@
                 };
             },
             methods: {
-                async loadMatches() {
+                async loadSubmissions() {
                     this.loading = true;
                     try {
-                        const response = await fetch('/api/my-results');
+                        const response = await fetch('/api/my-submissions');
                         const data = await response.json();
 
-                        this.matches = data.matches.sort((a, b) =>
-                            new Date(b.timestamp) - new Date(a.timestamp));
-                        this.calculateStats();
+                        if (data.success) {
+                            this.submissions = data.submissions;
+                            this.calculateOverallStats();
+                        }
+
+                        // 加载所有比赛记录
+                        const matchesResponse = await fetch('/api/my-results');
+                        const matchesData = await matchesResponse.json();
+                        this.matches = matchesData.matches || [];
                     } catch (error) {
-                        console.error('加载比赛记录失败:', error);
+                        console.error('加载提交记录失败:', error);
                     } finally {
                         this.loading = false;
                     }
                 },
-                calculateStats() {
-                    this.myStats.totalMatches = this.matches.length;
-                    this.myStats.wins = this.matches.filter(m => m.winner === this.currentUser).length;
-                    this.myStats.losses = this.myStats.totalMatches - this.myStats.wins;
-                    this.myStats.winRate = this.myStats.totalMatches > 0 ?
-                        Math.round((this.myStats.wins / this.myStats.totalMatches) * 100) : 0;
+                calculateOverallStats() {
+                    this.overallStats.totalMatches = 0;
+                    this.overallStats.wins = 0;
+                    this.overallStats.losses = 0;
+
+                    this.submissions.forEach(submission => {
+                        this.overallStats.totalMatches += submission.stats.wins + submission.stats.losses;
+                        this.overallStats.wins += submission.stats.wins;
+                        this.overallStats.losses += submission.stats.losses;
+                    });
+
+                    this.overallStats.winRate = this.overallStats.totalMatches > 0 ?
+                        Math.round((this.overallStats.wins / this.overallStats.totalMatches) * 100) : 0;
                 },
-                getMatchResult(match) {
-                    return match.winner === this.currentUser ? '胜利' : '失败';
+                async loadSubmissionMatches(submissionId) {
+                    // 比赛记录已在loadSubmissions中加载，这里不需要额外加载
                 },
-                getMatchResultClass(match) {
-                    return match.winner === this.currentUser ? 'match-win' : 'match-loss';
+                getSubmissionMatches(submissionId) {
+                    return this.matches.filter(match => {
+                        const challengerId = match.challenger_submission_id || match.challenger;
+                        const defenderId = match.defender_submission_id || match.defender;
+                        return challengerId === submissionId || defenderId === submissionId;
+                    }).sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
                 },
-                getBadgeClass(match) {
-                    return match.winner === this.currentUser ?
-                        'badge bg-success' : 'badge bg-danger';
+                getMatchResult(match, submissionId) {
+                    const challengerId = match.challenger_submission_id || match.challenger;
+                    const defenderId = match.defender_submission_id || match.defender;
+
+                    if (match.winner === submissionId) {
+                        return '胜利';
+                    } else if (match.winner === 'tie') {
+                        return '平局';
+                    } else {
+                        return '失败';
+                    }
                 },
-                getProgressBarClass(match) {
-                    return match.winner === this.currentUser ?
-                        'bg-success' : 'bg-danger';
+                getMatchResultClass(match, submissionId) {
+                    if (match.winner === submissionId) {
+                        return 'match-win';
+                    } else {
+                        return 'match-loss';
+                    }
                 },
-                getOpponent(match) {
-                    return match.challenger === this.currentUser ?
-                        match.defender : match.challenger;
+                getBadgeClass(match, submissionId) {
+                    if (match.winner === submissionId) {
+                        return 'badge bg-success';
+                    } else if (match.winner === 'tie') {
+                        return 'badge bg-warning';
+                    } else {
+                        return 'badge bg-danger';
+                    }
                 },
-                getMyScore(match) {
-                    return match.challenger === this.currentUser ?
-                        match.challenger_wins : match.defender_wins;
+                getOpponent(match, submissionId) {
+                    const challengerId = match.challenger_submission_id || match.challenger;
+                    const defenderId = match.defender_submission_id || match.defender;
+
+                    if (challengerId === submissionId) {
+                        return defenderId || 'default';
+                    } else {
+                        return challengerId;
+                    }
                 },
-                getOpponentScore(match) {
-                    return match.challenger === this.currentUser ?
-                        match.defender_wins : match.challenger_wins;
+                getMyScore(match, submissionId) {
+                    const challengerId = match.challenger_submission_id || match.challenger;
+
+                    if (challengerId === submissionId) {
+                        return match.challenger_wins;
+                    } else {
+                        return match.defender_wins;
+                    }
                 },
-                getMyWinPercentage(match) {
-                    const myScore = this.getMyScore(match);
-                    const totalGames = match.games_played || 9; // 如果没有games_played字段，默认为9
-                    return Math.round((myScore / totalGames) * 100);
-                },
-                getWinRateColor(winRate) {
-                    if (winRate >= 80) return '#28a745';
-                    if (winRate >= 60) return '#ffc107';
-                    if (winRate >= 40) return '#fd7e14';
-                    return '#dc3545';
+                getOpponentScore(match, submissionId) {
+                    const challengerId = match.challenger_submission_id || match.challenger;
+
+                    if (challengerId === submissionId) {
+                        return match.defender_wins;
+                    } else {
+                        return match.challenger_wins;
+                    }
                 },
                 formatDate(dateString) {
                     const date = new Date(dateString);
@@ -492,6 +591,62 @@
                                 hour: '2-digit',
                                 minute: '2-digit'
                             });
+                    }
+                },
+                getStatusText(status) {
+                    const statusMap = {
+                        'waiting': '等待中',
+                        'testing': '测试中',
+                        'completed': '已完成',
+                        'error': '错误',
+                        'active': '活跃'
+                    };
+                    return statusMap[status] || status;
+                },
+                getStatusBadgeClass(status) {
+                    const classMap = {
+                        'waiting': 'bg-warning text-dark',
+                        'testing': 'bg-info',
+                        'completed': 'bg-success',
+                        'error': 'bg-danger',
+                        'active': 'bg-success'
+                    };
+                    return classMap[status] || 'bg-secondary';
+                },
+                async downloadSubmission(submissionId) {
+                    try {
+                        const response = await fetch(`/api/download/${submissionId}`);
+
+                        if (!response.ok) {
+                            const errorData = await response.json();
+                            throw new Error(errorData.error || '下载失败');
+                        }
+
+                        // 获取文件名
+                        const contentDisposition = response.headers.get('Content-Disposition');
+                        let filename = `${submissionId}.py`;
+                        if (contentDisposition) {
+                            const matches = contentDisposition.match(/filename="(.+)"/);
+                            if (matches) {
+                                filename = matches[1];
+                            }
+                        }
+
+                        // 下载文件
+                        const blob = await response.blob();
+                        const url = window.URL.createObjectURL(blob);
+                        const a = document.createElement('a');
+                        a.href = url;
+                        a.download = filename;
+                        document.body.appendChild(a);
+                        a.click();
+                        window.URL.revokeObjectURL(url);
+                        document.body.removeChild(a);
+
+                        console.log(`下载完成: ${filename}`);
+                    } catch (error) {
+                        console.error('下载失败:', error);
+                        alert('下载失败: ' + error.message);
                     }
                 },
                 async logout() {
@@ -516,7 +671,7 @@
                     }
 
                     this.currentUser = data.studentId;
-                    await this.loadMatches();
+                    await this.loadSubmissions();
                 } catch (error) {
                     console.error('检查登录状态失败:', error);
                     window.location.href = 'index.html';

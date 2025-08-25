@@ -293,6 +293,7 @@
                                         <tr>
                                             <th style="width: 80px">排名</th>
                                             <th>学号</th>
+                                            <th>提交ID</th>
                                             <th style="width: 100px">胜场</th>
                                             <th style="width: 100px">败场</th>
                                             <th style="width: 100px">胜率</th>
@@ -300,7 +301,7 @@
                                         </tr>
                                     </thead>
                                     <tbody>
-                                        <tr v-for="player in rankings" :key="player.student_id"
+                                        <tr v-for="player in rankings" :key="player.submission_id || player.student_id"
                                             :class="{ 'table-warning': player.student_id === currentUser }">
                                             <td>
                                                 <div :class="[
@@ -316,6 +317,13 @@
                                                 <strong>{{ player.student_id }}</strong>
                                                 <span v-if="player.student_id === currentUser"
                                                     class="badge bg-primary ms-2">我</span>
+                                            </td>
+                                            <td>
+                                                <code class="text-primary">{{ player.submission_id || '旧版本' }}</code>
+                                                <br>
+                                                <small class="text-muted" v-if="player.upload_time">
+                                                    {{ formatDate(player.upload_time) }}
+                                                </small>
                                             </td>
                                             <td>
                                                 <span class="badge bg-success">{{ player.wins }}</span>
