@@ -89,6 +89,111 @@ class ChallengeQueue {
 
 const challengeQueue = new ChallengeQueue();
 
+// 文件写入队列管理器
+class FileWriteQueue {
+    constructor() {
+        this.queues = new Map(); // 为每个文件维护独立队列
+        this.pendingUpdates = new Map(); // 待处理的更新
+        this.updateTimers = new Map(); // 延迟写入定时器
+        this.batchDelay = 100; // 100ms 批量延迟
+    }
+
+    async writeFile(filePath, data) {
+        // 获取或创建该文件的写入队列
+        if (!this.queues.has(filePath)) {
+            this.queues.set(filePath, Promise.resolve());
+        }
+
+        // 将写入操作加入队列
+        const currentQueue = this.queues.get(filePath);
+        const newQueue = currentQueue.then(async () => {
+            try {
+                Logger.debug(`开始写入文件: ${path.basename(filePath)}`);
+                await writeFileAtomic(filePath, JSON.stringify(data, null, 2), 'utf8');
+                Logger.debug(`文件写入完成: ${path.basename(filePath)}`);
+            } catch (error) {
+                Logger.error(`文件写入失败: ${path.basename(filePath)}`, error);
+                throw error;
+            }
+        });
+
+        this.queues.set(filePath, newQueue);
+        return newQueue;
+    }
+
+    // 批量写入（用于频繁更新的数据）
+    async batchWriteFile(filePath, data) {
+        // 取消之前的定时器
+        if (this.updateTimers.has(filePath)) {
+            clearTimeout(this.updateTimers.get(filePath));
+        }
+
+        // 保存待更新数据
+        this.pendingUpdates.set(filePath, data);
+
+        // 设置新的延迟写入定时器
+        const timer = setTimeout(async () => {
+            const pendingData = this.pendingUpdates.get(filePath);
+            if (pendingData) {
+                await this.writeFile(filePath, pendingData);
+                this.pendingUpdates.delete(filePath);
+                this.updateTimers.delete(filePath);
+            }
+        }, this.batchDelay);
+
+        this.updateTimers.set(filePath, timer);
+
+        // 返回一个 Promise，在数据最终写入时解决
+        return new Promise((resolve, reject) => {
+            const checkCompletion = () => {
+                if (!this.updateTimers.has(filePath)) {
+                    const queue = this.queues.get(filePath);
+                    if (queue) {
+                        queue.then(resolve).catch(reject);
+                    } else {
+                        resolve();
+                    }
+                } else {
+                    setTimeout(checkCompletion, 10);
+                }
+            };
+            checkCompletion();
+        });
+    }
+
+    // 立即刷新所有待处理的更新
+    async flushAll() {
+        const flushPromises = [];
+
+        for (const [filePath, timer] of this.updateTimers.entries()) {
+            clearTimeout(timer);
+            const pendingData = this.pendingUpdates.get(filePath);
+            if (pendingData) {
+                flushPromises.push(this.writeFile(filePath, pendingData));
+                this.pendingUpdates.delete(filePath);
+            }
+            this.updateTimers.delete(filePath);
+        }
+
+        await Promise.all(flushPromises);
+    }
+
+    // 获取队列状态
+    getQueueStatus() {
+        const status = {};
+        for (const [filePath, queue] of this.queues.entries()) {
+            status[path.basename(filePath)] = {
+                isPending: queue !== Promise.resolve(),
+                hasPendingUpdate: this.pendingUpdates.has(filePath),
+                hasTimer: this.updateTimers.has(filePath)
+            };
+        }
+        return status;
+    }
+}
+
+const fileWriteQueue = new FileWriteQueue();
+
 class Logger {
     static formatTime() {
         return new Date().toLocaleString('zh-CN', {
@@ -302,7 +407,12 @@ async function readJsonFile(filePath) {
 }
 
 async function writeJsonFile(filePath, data) {
-    await writeFileAtomic(filePath, JSON.stringify(data, null, 2), 'utf8');
+    await fileWriteQueue.writeFile(filePath, data);
+}
+
+// 批量写入（用于频繁更新的操作）
+async function batchWriteJsonFile(filePath, data) {
+    await fileWriteQueue.batchWriteFile(filePath, data);
 }
 
 async function getSubmissionById(submissionId) {
@@ -608,9 +718,11 @@ app.get('/api/my-results', requireAuth, async (req, res) => {
 app.get('/api/challenge-queue', async (req, res) => {
     try {
         const queueStatus = challengeQueue.getStatus();
+        const fileQueueStatus = fileWriteQueue.getQueueStatus();
         res.json({
             success: true,
-            queue: queueStatus
+            challengeQueue: queueStatus,
+            fileWriteQueue: fileQueueStatus
         });
     } catch (error) {
         await logError(error, '获取挑战队列状态失败');
@@ -1051,7 +1163,8 @@ async function recordMatch(challengerSubmissionId, defenderSubmissionId, result)
     };
 
     matches.matches.push(matchRecord);
-    await writeJsonFile('./data/matches.json', matches);
+    // 使用批量写入，因为比赛记录可能频繁更新
+    await batchWriteJsonFile('./data/matches.json', matches);
 
     await logMatchDetails(challengerSubmissionId, defenderSubmissionId, result);
 }
@@ -1398,7 +1511,8 @@ async function updateRankings(submissionId, newRank) {
         player.last_updated = new Date().toISOString();
     }
 
-    await writeJsonFile('./data/rankings.json', rankings);
+    // 使用批量写入，避免频繁的文件操作
+    await batchWriteJsonFile('./data/rankings.json', rankings);
 } app.use(async (error, req, res, next) => {
     const context = `HTTP ${req.method} ${req.url} - IP: ${req.ip}`;
     await logError(error, context);
@@ -1430,7 +1544,7 @@ async function startServer() {
 process.on('uncaughtException', async (error) => {
     await logError(error, '未捕获的异常');
     Logger.error('未捕获的异常:', error);
-    process.exit(1);
+    await gracefulShutdown('uncaughtException');
 });
 
 process.on('unhandledRejection', async (reason, promise) => {
@@ -1438,5 +1552,46 @@ process.on('unhandledRejection', async (reason, promise) => {
     await logError(error, `未处理的Promise拒绝 - Promise: ${promise}`);
     Logger.error('未处理的Promise拒绝:', reason);
 });
+
+// 优雅关闭函数
+async function gracefulShutdown(signal) {
+    Logger.warn(`收到 ${signal} 信号，开始优雅关闭...`);
+
+    try {
+        // 刷新所有待处理的文件写入
+        Logger.info('正在刷新所有待处理的文件写入...');
+        await fileWriteQueue.flushAll();
+        Logger.success('所有待处理的文件写入已完成');
+
+        // 等待挑战队列完成当前处理
+        if (challengeQueue.isProcessing) {
+            Logger.info('等待当前挑战处理完成...');
+            let waitTime = 0;
+            const maxWaitTime = 30000; // 最多等待30秒
+
+            while (challengeQueue.isProcessing && waitTime < maxWaitTime) {
+                await new Promise(resolve => setTimeout(resolve, 1000));
+                waitTime += 1000;
+                Logger.debug(`等待挑战完成: ${waitTime}ms`);
+            }
+
+            if (challengeQueue.isProcessing) {
+                Logger.warn('挑战处理超时，强制退出');
+            } else {
+                Logger.success('挑战处理已完成');
+            }
+        }
+
+        Logger.success('优雅关闭完成');
+        process.exit(0);
+    } catch (error) {
+        Logger.error('优雅关闭过程中出错:', error);
+        process.exit(1);
+    }
+}
+
+// 监听退出信号
+process.on('SIGTERM', () => gracefulShutdown('SIGTERM'));
+process.on('SIGINT', () => gracefulShutdown('SIGINT'));
 
 startServer();
