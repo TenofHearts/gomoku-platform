@@ -89,22 +89,19 @@ class ChallengeQueue {
 
 const challengeQueue = new ChallengeQueue();
 
-// 文件写入队列管理器
 class FileWriteQueue {
     constructor() {
-        this.queues = new Map(); // 为每个文件维护独立队列
-        this.pendingUpdates = new Map(); // 待处理的更新
-        this.updateTimers = new Map(); // 延迟写入定时器
-        this.batchDelay = 100; // 100ms 批量延迟
+        this.queues = new Map();
+        this.pendingUpdates = new Map();
+        this.updateTimers = new Map();
+        this.batchDelay = 100;
     }
 
     async writeFile(filePath, data) {
-        // 获取或创建该文件的写入队列
         if (!this.queues.has(filePath)) {
             this.queues.set(filePath, Promise.resolve());
         }
 
-        // 将写入操作加入队列
         const currentQueue = this.queues.get(filePath);
         const newQueue = currentQueue.then(async () => {
             try {
@@ -121,17 +118,13 @@ class FileWriteQueue {
         return newQueue;
     }
 
-    // 批量写入（用于频繁更新的数据）
     async batchWriteFile(filePath, data) {
-        // 取消之前的定时器
         if (this.updateTimers.has(filePath)) {
             clearTimeout(this.updateTimers.get(filePath));
         }
 
-        // 保存待更新数据
         this.pendingUpdates.set(filePath, data);
 
-        // 设置新的延迟写入定时器
         const timer = setTimeout(async () => {
             const pendingData = this.pendingUpdates.get(filePath);
             if (pendingData) {
@@ -143,7 +136,6 @@ class FileWriteQueue {
 
         this.updateTimers.set(filePath, timer);
 
-        // 返回一个 Promise，在数据最终写入时解决
         return new Promise((resolve, reject) => {
             const checkCompletion = () => {
                 if (!this.updateTimers.has(filePath)) {
@@ -161,7 +153,6 @@ class FileWriteQueue {
         });
     }
 
-    // 立即刷新所有待处理的更新
     async flushAll() {
         const flushPromises = [];
 
@@ -178,7 +169,6 @@ class FileWriteQueue {
         await Promise.all(flushPromises);
     }
 
-    // 获取队列状态
     getQueueStatus() {
         const status = {};
         for (const [filePath, queue] of this.queues.entries()) {
@@ -374,7 +364,6 @@ const storage = multer.diskStorage({
         cb(null, 'submissions/');
     },
     filename: (req, file, cb) => {
-        // 现在每次提交都创建一个新的文件，而不是覆盖原有文件
         const timestamp = Date.now();
         const studentId = req.session.studentId;
         cb(null, `agent_${studentId}_${timestamp}.py`);
@@ -410,7 +399,6 @@ async function writeJsonFile(filePath, data) {
     await fileWriteQueue.writeFile(filePath, data);
 }
 
-// 批量写入（用于频繁更新的操作）
 async function batchWriteJsonFile(filePath, data) {
     await fileWriteQueue.batchWriteFile(filePath, data);
 }
@@ -567,17 +555,14 @@ app.post('/api/upload', requireAuth, upload.single('agentFile'), async (req, res
             return res.status(400).json({ error: '文件必须包含Agent类和make_move方法' });
         }
 
-        // 生成唯一的提交ID
         const submissionHistory = await readJsonFile('./data/submission_history.json');
         submissionHistory.counter = (submissionHistory.counter || 0) + 1;
         const submissionId = `SUB${submissionHistory.counter.toString().padStart(6, '0')}`;
 
-        // 使用提交ID重命名文件
         const newFileName = `${submissionId}.py`;
         const newFilePath = path.join('submissions', newFileName);
         await fs.rename(filePath, newFilePath);
 
-        // 创建新的提交记录
         const newSubmission = {
             submission_id: submissionId,
             student_id: studentId,
@@ -585,7 +570,7 @@ app.post('/api/upload', requireAuth, upload.single('agentFile'), async (req, res
             original_filename: req.file.originalname,
             file_path: newFilePath,
             upload_time: new Date().toISOString(),
-            status: 'waiting', // 等待测试
+            status: 'waiting',
             file_size: req.file.size
         };
 
@@ -626,16 +611,13 @@ app.get('/api/rankings', async (req, res) => {
     try {
         const rankings = await readJsonFile('./data/rankings.json');
 
-        // 为每个排名条目更新统计信息并获取提交详情
         for (let i = 0; i < rankings.rankings.length; i++) {
             const player = rankings.rankings[i];
 
-            // 如果是旧格式（只有student_id），需要找到对应的submission_id
             if (!player.submission_id && player.student_id) {
-                // 从submission_history中找到该学生的最新提交
                 const studentSubmissions = await getSubmissionsByStudentId(player.student_id);
                 if (studentSubmissions.length > 0) {
-                    player.submission_id = studentSubmissions[0].submission_id; // 最新的提交
+                    player.submission_id = studentSubmissions[0].submission_id;
                 }
             }
 
@@ -651,7 +633,6 @@ app.get('/api/rankings', async (req, res) => {
                 player.losses = playerStats.losses;
                 player.win_rate = playerStats.winRate;
             } else {
-                // 兼容旧数据
                 const playerStats = await calculatePlayerStats(player.student_id);
                 player.wins = playerStats.wins;
                 player.losses = playerStats.losses;
@@ -675,12 +656,10 @@ app.get('/api/my-results', requireAuth, async (req, res) => {
         const studentId = req.session.studentId;
         const matches = await readJsonFile('./data/matches.json');
 
-        // 获取该学生的所有提交
         const studentSubmissions = await getSubmissionsByStudentId(studentId);
         const submissionIds = studentSubmissions.map(sub => sub.submission_id);
 
         const myMatches = matches.matches.filter(match => {
-            // 支持新的提交ID格式和旧的学生ID格式
             const challengerId = match.challenger_submission_id || match.challenger;
             const defenderId = match.defender_submission_id || match.defender;
 
@@ -688,7 +667,6 @@ app.get('/api/my-results', requireAuth, async (req, res) => {
                 submissionIds.includes(challengerId) || submissionIds.includes(defenderId);
         });
 
-        // 为每个比赛添加提交详情
         for (let match of myMatches) {
             if (match.challenger_submission_id) {
                 const challengerSubmission = await getSubmissionById(match.challenger_submission_id);
@@ -735,11 +713,9 @@ app.get('/api/my-queue-status', requireAuth, async (req, res) => {
         const studentId = req.session.studentId;
         const queueStatus = challengeQueue.getStatus();
 
-        // 获取该学生的所有提交
         const studentSubmissions = await getSubmissionsByStudentId(studentId);
         const submissionIds = studentSubmissions.map(sub => sub.submission_id);
 
-        // 查找学生的提交是否在队列中
         const inQueueSubmissions = queueStatus.queue.filter(submissionId => submissionIds.includes(submissionId));
         const earliestPosition = inQueueSubmissions.length > 0 ?
             Math.min(...inQueueSubmissions.map(subId => queueStatus.queue.indexOf(subId))) : -1;
@@ -759,18 +735,15 @@ app.get('/api/my-queue-status', requireAuth, async (req, res) => {
     }
 });
 
-// 新增API：获取学生的所有提交历史
 app.get('/api/my-submissions', requireAuth, async (req, res) => {
     try {
         const studentId = req.session.studentId;
         const submissions = await getSubmissionsByStudentId(studentId);
 
-        // 为每个提交计算统计信息
         for (let submission of submissions) {
             const stats = await calculatePlayerStats(submission.submission_id);
             submission.stats = stats;
 
-            // 获取排名信息
             const rankings = await readJsonFile('./data/rankings.json');
             const ranking = rankings.rankings.find(r => r.submission_id === submission.submission_id);
             submission.current_rank = ranking ? ranking.rank : null;
@@ -786,7 +759,6 @@ app.get('/api/my-submissions', requireAuth, async (req, res) => {
     }
 });
 
-// 新增API：获取特定提交的详细信息
 app.get('/api/submission/:submissionId', requireAuth, async (req, res) => {
     try {
         const submissionId = req.params.submissionId;
@@ -797,21 +769,17 @@ app.get('/api/submission/:submissionId', requireAuth, async (req, res) => {
             return res.status(404).json({ error: '提交不存在' });
         }
 
-        // 验证权限
         if (submission.student_id !== studentId) {
             return res.status(403).json({ error: '无权限访问该提交' });
         }
 
-        // 获取统计信息
         const stats = await calculatePlayerStats(submissionId);
         submission.stats = stats;
 
-        // 获取排名信息
         const rankings = await readJsonFile('./data/rankings.json');
         const ranking = rankings.rankings.find(r => r.submission_id === submissionId);
         submission.current_rank = ranking ? ranking.rank : null;
 
-        // 获取相关比赛
         const matches = await readJsonFile('./data/matches.json');
         const relatedMatches = matches.matches.filter(match => {
             const challengerId = match.challenger_submission_id || match.challenger;
@@ -830,7 +798,6 @@ app.get('/api/submission/:submissionId', requireAuth, async (req, res) => {
     }
 });
 
-// 新增API：下载历史代码
 app.get('/api/download/:submissionId', requireAuth, async (req, res) => {
     try {
         const submissionId = req.params.submissionId;
@@ -841,12 +808,10 @@ app.get('/api/download/:submissionId', requireAuth, async (req, res) => {
             return res.status(404).json({ error: '提交不存在' });
         }
 
-        // 验证权限
         if (submission.student_id !== studentId) {
             return res.status(403).json({ error: '无权限下载该提交' });
         }
 
-        // 检查文件是否存在
         try {
             await fs.access(submission.file_path);
         } catch {
@@ -895,7 +860,6 @@ async function startChallengeProcess(challengerSubmissionId) {
     try {
         Logger.info(`========== 开始处理挑战者提交 ${challengerSubmissionId} ==========`);
 
-        // 更新状态为测试中
         await updateSubmissionStatus(challengerSubmissionId, 'testing');
 
         const challengerSubmission = await getSubmissionById(challengerSubmissionId);
@@ -950,7 +914,6 @@ async function startChallengeProcess(challengerSubmissionId) {
                 }
             }
 
-            // 检查是否是同一个学生的提交，如果是则跳过
             if (defender) {
                 const defenderSubmission = await getSubmissionById(defender.submission_id);
                 if (defenderSubmission && defenderSubmission.student_id === challengerStudentId) {
@@ -1001,10 +964,8 @@ async function startChallengeProcess(challengerSubmissionId) {
 
         Logger.info(`========== 挑战者提交 ${challengerSubmissionId} 所有对局完成 ==========`);
 
-        // 更新状态为已完成
         await updateSubmissionStatus(challengerSubmissionId, 'completed');
     } catch (error) {
-        // 如果出错，将状态更新为错误
         await updateSubmissionStatus(challengerSubmissionId, 'error');
         await logError(error, `打擂台挑战失败 - 挑战者提交: ${challengerSubmissionId}`);
         Logger.error(`打擂台挑战失败:`, error);
@@ -1163,7 +1124,6 @@ async function recordMatch(challengerSubmissionId, defenderSubmissionId, result)
     };
 
     matches.matches.push(matchRecord);
-    // 使用批量写入，因为比赛记录可能频繁更新
     await batchWriteJsonFile('./data/matches.json', matches);
 
     await logMatchDetails(challengerSubmissionId, defenderSubmissionId, result);
@@ -1459,26 +1419,22 @@ async function updateRankings(submissionId, newRank) {
 
     const studentId = submission.student_id;
 
-    // 查找该学生的现有排名
     const existingRankingIndex = rankings.rankings.findIndex(r => r.student_id === studentId);
 
     if (existingRankingIndex !== -1) {
         const existingRank = rankings.rankings[existingRankingIndex].rank;
 
-        // 如果新排名不如现有排名（数字更大），则不更新排行榜
         if (newRank >= existingRank) {
             Logger.info(`学生 ${studentId} 的新提交 ${submissionId} 排名第 ${newRank} 名，不如现有排名第 ${existingRank} 名，不更新排行榜`);
             return;
         }
 
-        // 移除该学生的旧排名记录
         rankings.rankings.splice(existingRankingIndex, 1);
         Logger.info(`学生 ${studentId} 的新提交 ${submissionId} 排名第 ${newRank} 名，优于现有排名第 ${existingRank} 名，更新排行榜`);
     } else {
         Logger.info(`学生 ${studentId} 的提交 ${submissionId} 首次进入排行榜，排名第 ${newRank} 名`);
     }
 
-    // 更新其他排名（为新排名腾出位置）
     rankings.rankings.forEach(r => {
         if (r.rank >= newRank) {
             r.rank++;
@@ -1487,7 +1443,6 @@ async function updateRankings(submissionId, newRank) {
 
     const stats = await calculatePlayerStats(submissionId);
 
-    // 添加新排名
     rankings.rankings.push({
         rank: newRank,
         submission_id: submissionId,
@@ -1498,7 +1453,6 @@ async function updateRankings(submissionId, newRank) {
         last_updated: new Date().toISOString()
     });
 
-    // 重新排序并更新所有排名
     rankings.rankings.sort((a, b) => a.rank - b.rank);
 
     for (let i = 0; i < rankings.rankings.length; i++) {
@@ -1511,7 +1465,6 @@ async function updateRankings(submissionId, newRank) {
         player.last_updated = new Date().toISOString();
     }
 
-    // 使用批量写入，避免频繁的文件操作
     await batchWriteJsonFile('./data/rankings.json', rankings);
 } app.use(async (error, req, res, next) => {
     const context = `HTTP ${req.method} ${req.url} - IP: ${req.ip}`;
@@ -1553,21 +1506,18 @@ process.on('unhandledRejection', async (reason, promise) => {
     Logger.error('未处理的Promise拒绝:', reason);
 });
 
-// 优雅关闭函数
 async function gracefulShutdown(signal) {
     Logger.warn(`收到 ${signal} 信号，开始优雅关闭...`);
 
     try {
-        // 刷新所有待处理的文件写入
         Logger.info('正在刷新所有待处理的文件写入...');
         await fileWriteQueue.flushAll();
         Logger.success('所有待处理的文件写入已完成');
 
-        // 等待挑战队列完成当前处理
         if (challengeQueue.isProcessing) {
             Logger.info('等待当前挑战处理完成...');
             let waitTime = 0;
-            const maxWaitTime = 30000; // 最多等待30秒
+            const maxWaitTime = 30000;
 
             while (challengeQueue.isProcessing && waitTime < maxWaitTime) {
                 await new Promise(resolve => setTimeout(resolve, 1000));
@@ -1590,7 +1540,6 @@ async function gracefulShutdown(signal) {
     }
 }
 
-// 监听退出信号
 process.on('SIGTERM', () => gracefulShutdown('SIGTERM'));
 process.on('SIGINT', () => gracefulShutdown('SIGINT'));
 
