@@ -1,0 +1,19 @@
+# 忽略 Node.js 依赖目录，这些将在 Docker 镜像中重新安装
+node_modules
+
+# 忽略日志文件和目录
+logs
+*.log
+
+# 忽略 Git 版本控制目录
+.git
+.gitignore
+
+# 忽略 Python 缓存
+**/__pycache__
+
+# 忽略项目规划和临时文件
+plan.md
+
+# 忽略 VS Code 编辑器配置
+.vscode
