@@ -1,6 +1,6 @@
 # 尝试强制移除名为 gomoku-server 的旧容器，如果不存在则忽略错误
 try {
-    docker rm -f gomoku-server -ErrorAction Stop
+    docker rm -f gomoku-server
 }
 catch {}
 
