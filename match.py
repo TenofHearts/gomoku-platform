@@ -145,6 +145,13 @@ class MatchEngine:
                             1, {"moves": 0, "total_time": 0, "average_time": 0}
                         ),
                     }
+
+                if "skill_casts" in game_record:
+                    for cast in game_record["skill_casts"]:
+                        if cast["player"] == 1:
+                            cast["player"] = 2
+                        elif cast["player"] == 2:
+                            cast["player"] = 1
         except Exception as e:
             # 异常情况下认为挑战者失败
             winner = 2

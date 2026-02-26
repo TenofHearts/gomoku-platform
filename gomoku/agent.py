@@ -11,7 +11,9 @@ class Agent:
         在棋盘上下一步棋。
 
         @param board: 表示游戏棋盘的二维列表
-        @return 表示移动位置的元组 (行, 列)
+        @return 二元组: (落子位置, 技能位置)
+                - 落子位置: (行, 列)
+                - 技能位置: (行, 列) 或 None
         """
         empty_cells = [
             (i, j)
@@ -19,4 +21,5 @@ class Agent:
             for j in range(len(board))
             if board[i][j] == 0
         ]
-        return random.choice(empty_cells) if empty_cells else None
+        move = random.choice(empty_cells) if empty_cells else None
+        return move, None

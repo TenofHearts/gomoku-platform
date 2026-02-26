@@ -1108,6 +1108,38 @@ async function recordMatch(challengerSubmissionId, defenderSubmissionId, result)
         actualWinner = result.winner;
     }
 
+    const detailedGames = (result.games || []).map((game) => {
+        const gameRecord = game.game_record || {};
+        const moves = Array.isArray(gameRecord.moves) ? gameRecord.moves : [];
+        const skillCasts = Array.isArray(gameRecord.skill_casts) ? gameRecord.skill_casts : [];
+
+        return {
+            game_number: game.game,
+            winner: game.winner,
+            duration: game.duration,
+            challenger_first: game.challenger_first,
+            move_analysis: analyzeMovePatterns(moves),
+            game_record: {
+                board_size: gameRecord.board_size || 15,
+                total_moves: gameRecord.total_moves || 0,
+                average_move_time: gameRecord.average_move_time || 0,
+                player_statistics: gameRecord.player_statistics || {
+                    1: { moves: 0, total_time: 0, average_time: 0 },
+                    2: { moves: 0, total_time: 0, average_time: 0 }
+                },
+                skill_casts: skillCasts,
+                moves,
+                board_states: gameRecord.board_states || []
+            }
+        };
+    });
+
+    const skillSummary = detailedGames.reduce((summary, game) => {
+        const casts = game.game_record?.skill_casts || [];
+        summary.total_cast += casts.length;
+        return summary;
+    }, { total_cast: 0 });
+
     const matchRecord = {
         id: `match_${Date.now()}`,
         challenger_submission_id: challengerSubmissionId,
@@ -1120,7 +1152,9 @@ async function recordMatch(challengerSubmissionId, defenderSubmissionId, result)
         defender_wins: result.defender_wins,
         timestamp: new Date().toISOString(),
         total_duration: result.games ? result.games.reduce((sum, game) => sum + game.duration, 0) : 0,
-        average_game_duration: result.games && result.games.length > 0 ? result.games.reduce((sum, game) => sum + game.duration, 0) / result.games.length : 0
+        average_game_duration: result.games && result.games.length > 0 ? result.games.reduce((sum, game) => sum + game.duration, 0) / result.games.length : 0,
+        games: detailedGames,
+        skill_summary: skillSummary
     };
 
     matches.matches.push(matchRecord);
@@ -1180,6 +1214,13 @@ async function logMatchDetails(challengerSubmissionId, defenderSubmissionId, res
                         const stats = game.game_record.player_statistics;
                         logContent += `玩家1统计: ${stats[1].moves}步, 平均${stats[1].average_time.toFixed(3)}秒/步\n`;
                         logContent += `玩家2统计: ${stats[2].moves}步, 平均${stats[2].average_time.toFixed(3)}秒/步\n`;
+                    }
+
+                    if (game.game_record.skill_casts && game.game_record.skill_casts.length > 0) {
+                        logContent += '\n技能释放记录:\n';
+                        game.game_record.skill_casts.forEach((cast) => {
+                            logContent += `- 玩家${cast.player} 在第${cast.move_number}手释放技能，位置(${cast.position[0]}, ${cast.position[1]})\n`;
+                        });
                     }
 
                     logContent += '\n棋谱记录:\n';
@@ -1274,6 +1315,7 @@ function getStatusDisplayName(result) {
         case 'draw_move': return '平局落子';
         case 'invalid_move': return '无效移动';
         case 'invalid_position': return '位置无效';
+        case 'blocked_position': return '封锁位落子';
         case 'timeout': return '超时';
         case 'exception': return '异常';
         default: return result || '未知';
@@ -1302,6 +1344,10 @@ function formatBoard(board) {
                 boardStr += ' ●';
             } else if (cell === 2) {
                 boardStr += ' ○';
+            } else if (cell === 3) {
+                boardStr += ' ◇';
+            } else if (cell === 4) {
+                boardStr += ' ◆';
             } else {
                 boardStr += ' ?';
             }
@@ -1340,6 +1386,7 @@ function analyzeMovePatterns(moves) {
                 break;
             case 'invalid_move':
             case 'invalid_position':
+            case 'blocked_position':
                 analysis.invalid_moves++;
                 analysis.errors.push({
                     move_number: move.move_number,

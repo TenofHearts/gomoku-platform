@@ -59,12 +59,15 @@ class Search(Agent):
                   0 = 空位
                   1 = 玩家1的棋子
                   2 = 玩家2的棋子
+              3 = 玩家1释放的技能封锁位（临时）
+              4 = 玩家2释放的技能封锁位（临时）
         
         返回:
-            (row, col): 落子位置的元组
+            ((row, col), (skill_row, skill_col) | None):
+                第一个元组是本回合落子位置，第二个元组是技能释放位置（不释放则None）
         """
         # 您的AI逻辑
-        return (row, col)
+        return (row, col), None
 ```
 
 ## 打擂台规则
