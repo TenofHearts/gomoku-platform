@@ -166,6 +166,21 @@
             background: linear-gradient(45deg, #48bb78, #38a169);
         }
 
+        .win-rate-cell {
+            justify-content: center;
+        }
+
+        .win-rate-progress {
+            flex: 0 0 140px;
+            width: 140px;
+            height: 8px;
+        }
+
+        .win-rate-label {
+            width: 52px;
+            text-align: left;
+        }
+
         .alert-info {
             background: linear-gradient(135deg, #bee3f8 0%, #90cdf4 100%);
             color: #2c5282;
@@ -296,8 +311,7 @@
                                             <th>提交ID</th>
                                             <th style="width: 100px">胜场</th>
                                             <th style="width: 100px">败场</th>
-                                            <th style="width: 100px">胜率</th>
-                                            <th style="width: 150px">最后更新</th>
+                                            <th style="width: 220px">胜率</th>
                                         </tr>
                                     </thead>
                                     <tbody>
@@ -332,17 +346,15 @@
                                                 <span class="badge bg-danger">{{ player.losses }}</span>
                                             </td>
                                             <td>
-                                                <div class="d-flex align-items-center">
-                                                    <div class="progress flex-grow-1 me-2" style="height: 8px;">
+                                                <div class="win-rate-cell d-flex align-items-center">
+                                                    <div class="progress win-rate-progress me-2">
                                                         <div class="progress-bar"
                                                             :style="{ width: player.win_rate * 100 + '%' }">
                                                         </div>
                                                     </div>
-                                                    <small>{{ (player.win_rate * 100).toFixed(1) }}%</small>
+                                                    <small class="win-rate-label">{{ (player.win_rate * 100).toFixed(1)
+                                                        }}%</small>
                                                 </div>
-                                            </td>
-                                            <td>
-                                                <small class="text-muted">{{ formatDate(player.last_updated) }}</small>
                                             </td>
                                         </tr>
                                     </tbody>
@@ -366,7 +378,7 @@
                     <div class="alert alert-info">
                         <h6><i class="bi bi-info-circle"></i> 排行榜说明</h6>
                         <ul class="mb-0">
-                            <li><strong>新AI挑战规则：</strong>从第10名开始，每场比赛9局，胜局多者获胜</li>
+                            <li><strong>新AI挑战规则：</strong>从第10名开始，每场比赛5局，胜局多者获胜</li>
                             <li><strong>胜率计算：</strong>胜率 = 胜场数 / (胜场数 + 败场数)</li>
                             <li><strong>排名更新：</strong>挑战成功后自动上升</li>
                             <li><strong>实时更新：</strong>点击"刷新"按钮查看最新排名</li>

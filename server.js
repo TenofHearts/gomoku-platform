@@ -7,9 +7,96 @@ const bcrypt = require('bcryptjs');
 const session = require('express-session');
 const { spawn } = require('child_process');
 const chalk = require('chalk');
+const crypto = require('crypto');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
+const MAX_PROCESS_OUTPUT_CHARS = 1024 * 1024;
+const MATCH_TIMEOUT_MS = Number(process.env.MATCH_TIMEOUT_MS || 6000 * 1000);
+const MATCH_GAMES = 5;
+const MATCH_WORKERS = 5;
+const PYTHON_EXECUTABLE = process.env.PYTHON_EXECUTABLE || 'python';
+const RESULT_JSON_BEGIN = '__GOMOKU_MATCH_RESULT_JSON_BEGIN__';
+const RESULT_JSON_END = '__GOMOKU_MATCH_RESULT_JSON_END__';
+
+function appendBoundedOutput(current, chunk, limit = MAX_PROCESS_OUTPUT_CHARS) {
+    if (current.length >= limit) {
+        return current;
+    }
+
+    const next = current + chunk.toString();
+    if (next.length <= limit) {
+        return next;
+    }
+
+    return next.slice(0, limit) + '\n[output truncated]\n';
+}
+
+function parseMatchResult(stdout) {
+    const beginIndex = stdout.lastIndexOf(RESULT_JSON_BEGIN);
+    const endIndex = stdout.lastIndexOf(RESULT_JSON_END);
+
+    if (beginIndex !== -1 && endIndex !== -1 && endIndex > beginIndex) {
+        const payloadStart = beginIndex + RESULT_JSON_BEGIN.length;
+        return JSON.parse(stdout.slice(payloadStart, endIndex).trim());
+    }
+
+    try {
+        return JSON.parse(stdout);
+    } catch (error) {
+        const firstBrace = stdout.indexOf('{');
+        const lastBrace = stdout.lastIndexOf('}');
+
+        if (firstBrace !== -1 && lastBrace > firstBrace) {
+            return JSON.parse(stdout.slice(firstBrace, lastBrace + 1));
+        }
+
+        throw error;
+    }
+}
+
+function validatePythonSyntax(filePath) {
+    return new Promise((resolve, reject) => {
+        const validator = spawn(PYTHON_EXECUTABLE, [
+            '-c',
+            'import ast, pathlib, sys\nast.parse(pathlib.Path(sys.argv[1]).read_text(encoding="utf-8"))',
+            filePath
+        ], {
+            cwd: __dirname,
+            env: { ...process.env, PYTHONIOENCODING: 'utf-8' },
+            stdio: ['ignore', 'pipe', 'pipe']
+        });
+
+        let stderr = '';
+        const timer = setTimeout(() => {
+            validator.kill('SIGKILL');
+            reject(new Error('Python语法检查超时'));
+        }, 5000);
+
+        validator.stderr.on('data', (data) => {
+            stderr = appendBoundedOutput(stderr, data, 64 * 1024);
+        });
+
+        validator.on('error', (error) => {
+            clearTimeout(timer);
+            reject(error);
+        });
+
+        validator.on('close', (code) => {
+            clearTimeout(timer);
+            if (code === 0) {
+                resolve();
+            } else {
+                reject(new Error(stderr.trim() || 'Python语法检查失败'));
+            }
+        });
+    });
+}
+
+function getObfuscatedSubmissionFilename(submissionId) {
+    const digest = crypto.createHash('sha256').update(submissionId).digest('hex');
+    return `agent_${digest}.py`;
+}
 
 class ChallengeQueue {
     constructor() {
@@ -361,7 +448,9 @@ app.use(session({
 
 const storage = multer.diskStorage({
     destination: (req, file, cb) => {
-        cb(null, 'submissions/');
+        fs.mkdir('submissions', { recursive: true })
+            .then(() => cb(null, 'submissions/'))
+            .catch(cb);
     },
     filename: (req, file, cb) => {
         const timestamp = Date.now();
@@ -376,7 +465,7 @@ const upload = multer({
         fileSize: 50 * 1024
     },
     fileFilter: (req, file, cb) => {
-        if (path.extname(file.originalname) !== '.py') {
+        if (path.extname(file.originalname).toLowerCase() !== '.py') {
             return cb(new Error('只允许上传Python文件'));
         }
         cb(null, true);
@@ -433,6 +522,9 @@ function requireAuth(req, res, next) {
 }
 
 async function initializeDataFiles() {
+    await fs.mkdir('./data', { recursive: true });
+    await fs.mkdir('./submissions', { recursive: true });
+
     const dataFiles = [
         { path: './data/students.json', default: {} },
         { path: './data/rankings.json', default: { rankings: [] } },
@@ -555,11 +647,18 @@ app.post('/api/upload', requireAuth, upload.single('agentFile'), async (req, res
             return res.status(400).json({ error: '文件必须包含Agent类和make_move方法' });
         }
 
+        try {
+            await validatePythonSyntax(filePath);
+        } catch (error) {
+            await fs.unlink(filePath);
+            return res.status(400).json({ error: `Python语法检查失败: ${error.message}` });
+        }
+
         const submissionHistory = await readJsonFile('./data/submission_history.json');
         submissionHistory.counter = (submissionHistory.counter || 0) + 1;
         const submissionId = `SUB${submissionHistory.counter.toString().padStart(6, '0')}`;
 
-        const newFileName = `${submissionId}.py`;
+        const newFileName = getObfuscatedSubmissionFilename(submissionId);
         const newFilePath = path.join('submissions', newFileName);
         await fs.rename(filePath, newFilePath);
 
@@ -819,9 +918,10 @@ app.get('/api/download/:submissionId', requireAuth, async (req, res) => {
         }
 
         const fileContent = await fs.readFile(submission.file_path, 'utf8');
+        const downloadName = path.basename(submission.original_filename || submission.filename).replace(/[\r\n"]/g, '_');
 
         res.setHeader('Content-Type', 'text/plain; charset=utf-8');
-        res.setHeader('Content-Disposition', `attachment; filename="${submission.original_filename || submission.filename}"`);
+        res.setHeader('Content-Disposition', `attachment; filename="${downloadName}"`);
         res.send(fileContent);
 
         Logger.info(`学生 ${studentId} 下载了提交 ${submissionId} 的代码文件`);
@@ -975,6 +1075,7 @@ async function startChallengeProcess(challengerSubmissionId) {
 
 async function runMatch(challengerSubmissionId, defenderSubmissionId) {
     return new Promise(async (resolve, reject) => {
+        let matchResultPath = null;
         try {
             const challengerSubmission = await getSubmissionById(challengerSubmissionId);
             const defenderSubmission = defenderSubmissionId ? await getSubmissionById(defenderSubmissionId) : null;
@@ -987,30 +1088,64 @@ async function runMatch(challengerSubmissionId, defenderSubmissionId) {
             const defenderPath = defenderSubmission ? defenderSubmission.file_path : './gomoku/agent.py';
 
             Logger.match(`开始比赛: ${challengerSubmissionId} vs ${defenderSubmissionId || 'default'}`);
+            await ensureLogDirectory();
+            const resultFileName = `match_result_${Date.now()}_${process.pid}_${Math.random().toString(36).slice(2)}.json`;
+            matchResultPath = path.join(__dirname, 'logs', resultFileName);
 
-            const pythonProcess = spawn('python', [
+            const pythonProcess = spawn(PYTHON_EXECUTABLE, [
                 './match.py',
                 '--challenger', challengerPath,
                 '--defender', defenderPath,
-                '--games', '9',
-                '--silent'
+                '--games', String(MATCH_GAMES),
+                '--workers', String(MATCH_WORKERS),
+                '--silent',
+                '--output', matchResultPath
             ], {
+                cwd: __dirname,
+                env: { ...process.env, PYTHONIOENCODING: 'utf-8', PYTHONUNBUFFERED: '1' },
                 stdio: ['pipe', 'pipe', 'pipe']
             });
 
             let stdout = '';
             let stderr = '';
+            let timedOut = false;
+
+            const matchTimer = setTimeout(() => {
+                timedOut = true;
+                Logger.warn(`比赛进程超时，准备终止: ${challengerSubmissionId} vs ${defenderSubmissionId || 'default'}`);
+                pythonProcess.kill('SIGKILL');
+            }, MATCH_TIMEOUT_MS);
 
             pythonProcess.stdout.on('data', (data) => {
-                stdout += data.toString();
+                stdout = appendBoundedOutput(stdout, data);
             });
 
             pythonProcess.stderr.on('data', (data) => {
-                stderr += data.toString();
+                stderr = appendBoundedOutput(stderr, data);
             });
 
             pythonProcess.on('close', async (code) => {
+                clearTimeout(matchTimer);
                 try {
+                    if (timedOut) {
+                        const timeoutSeconds = Math.round(MATCH_TIMEOUT_MS / 1000);
+                        const errorMsg = `比赛进程超时，已终止，限制: ${timeoutSeconds}秒`;
+                        Logger.error(errorMsg);
+                        await logError(new Error(errorMsg), `比赛超时 - ${challengerSubmissionId} vs ${defenderSubmissionId || 'default'} - stdout=${stdout}, stderr=${stderr}`);
+                        if (matchResultPath) {
+                            fs.unlink(matchResultPath).catch(() => {});
+                            matchResultPath = null;
+                        }
+
+                        resolve({
+                            winner: defenderSubmissionId || 'default',
+                            challenger_wins: 0,
+                            defender_wins: MATCH_GAMES,
+                            error: errorMsg
+                        });
+                        return;
+                    }
+
                     if (code !== 0) {
                         const errorMsg = `比赛进程异常退出，代码: ${code}, 错误: ${stderr}`;
                         Logger.error(errorMsg);
@@ -1022,44 +1157,57 @@ async function runMatch(challengerSubmissionId, defenderSubmissionId) {
                         Logger.debug(`- 错误输出: ${stderr || '(无错误输出)'}`);
 
                         await logError(new Error(errorMsg), `比赛执行失败 - ${challengerSubmissionId} vs ${defenderSubmissionId || 'default'} - 详细信息: 退出代码=${code}, stdout=${stdout}, stderr=${stderr}`);
+                        if (matchResultPath) {
+                            fs.unlink(matchResultPath).catch(() => {});
+                            matchResultPath = null;
+                        }
 
                         resolve({
                             winner: defenderSubmissionId || 'default',
                             challenger_wins: 0,
-                            defender_wins: 9,
+                            defender_wins: MATCH_GAMES,
                             error: `比赛进程异常: ${stderr}`
                         });
                         return;
                     }
 
-                    const result = JSON.parse(stdout);
+                    const resultOutput = await fs.readFile(matchResultPath, 'utf8');
+                    const result = JSON.parse(resultOutput);
+                    fs.unlink(matchResultPath).catch(() => {});
+                    matchResultPath = null;
 
                     await recordMatch(challengerSubmissionId, defenderSubmissionId, result);
 
                     resolve(result);
                 } catch (error) {
-                    const errorMsg = `解析比赛结果失败: ${error.message}`;
+                    const errorMsg = `处理比赛结果失败: ${error.message}`;
                     Logger.error(errorMsg);
-                    Logger.debug(`解析错误详细信息:`);
+                    Logger.debug(`比赛结果处理错误详细信息:`);
                     Logger.debug(`- 挑战者: ${challengerSubmissionId}`);
                     Logger.debug(`- 防守者: ${defenderSubmissionId || 'default'}`);
                     Logger.debug(`- 标准输出长度: ${stdout.length}`);
                     Logger.debug(`- 标准输出内容: ${stdout.substring(0, 1000)}${stdout.length > 1000 ? '...(截断)' : ''}`);
+                    Logger.debug(`- 结果文件: ${matchResultPath || '(已清理)'}`);
                     Logger.debug(`- 错误输出: ${stderr || '(无错误输出)'}`);
-                    Logger.debug(`- 解析错误: ${error.stack}`);
+                    Logger.debug(`- 处理错误: ${error.stack}`);
 
-                    await logError(error, `解析比赛结果失败 - ${challengerSubmissionId} vs ${defenderSubmissionId || 'default'} - stdout长度=${stdout.length}, stderr=${stderr}, 原始输出=${stdout}`);
+                    await logError(error, `处理比赛结果失败 - ${challengerSubmissionId} vs ${defenderSubmissionId || 'default'} - stdout长度=${stdout.length}, stderr=${stderr}, 原始输出=${stdout}`);
+                    if (matchResultPath) {
+                        fs.unlink(matchResultPath).catch(() => {});
+                        matchResultPath = null;
+                    }
 
                     resolve({
                         winner: defenderSubmissionId || 'default',
                         challenger_wins: 0,
-                        defender_wins: 9,
+                        defender_wins: MATCH_GAMES,
                         error: '解析结果失败'
                     });
                 }
             });
 
             pythonProcess.on('error', async (error) => {
+                clearTimeout(matchTimer);
                 Logger.error('启动比赛进程失败:', error.message);
                 Logger.debug(`进程启动错误详细信息:`);
                 Logger.debug(`- 错误类型: ${error.name}`);
@@ -1070,21 +1218,28 @@ async function runMatch(challengerSubmissionId, defenderSubmissionId) {
                 Logger.debug(`- 防守者路径: ${defenderPath}`);
 
                 await logError(error, `启动比赛进程失败 - ${challengerSubmissionId} vs ${defenderSubmissionId || 'default'} - 错误代码=${error.code}, 信号=${error.signal}`);
+                if (matchResultPath) {
+                    fs.unlink(matchResultPath).catch(() => {});
+                    matchResultPath = null;
+                }
 
                 resolve({
                     winner: defenderSubmissionId || 'default',
                     challenger_wins: 0,
-                    defender_wins: 9,
+                    defender_wins: MATCH_GAMES,
                     error: '启动进程失败'
                 });
             });
         } catch (error) {
             Logger.error('比赛执行前准备失败:', error);
             await logError(error, `比赛准备失败 - ${challengerSubmissionId} vs ${defenderSubmissionId || 'default'}`);
+            if (matchResultPath) {
+                fs.unlink(matchResultPath).catch(() => {});
+            }
             resolve({
                 winner: defenderSubmissionId || 'default',
                 challenger_wins: 0,
-                defender_wins: 9,
+                defender_wins: MATCH_GAMES,
                 error: '比赛准备失败'
             });
         }
@@ -1128,8 +1283,7 @@ async function recordMatch(challengerSubmissionId, defenderSubmissionId, result)
                     2: { moves: 0, total_time: 0, average_time: 0 }
                 },
                 skill_casts: skillCasts,
-                moves,
-                board_states: gameRecord.board_states || []
+                moves
             }
         };
     });
@@ -1147,7 +1301,7 @@ async function recordMatch(challengerSubmissionId, defenderSubmissionId, result)
         defender_submission_id: defenderSubmissionId || 'default',
         defender_student_id: defenderSubmission ? defenderSubmission.student_id : 'default',
         winner: actualWinner,
-        games_played: 9,
+        games_played: result.total_games || result.games?.length || MATCH_GAMES,
         challenger_wins: result.challenger_wins,
         defender_wins: result.defender_wins,
         timestamp: new Date().toISOString(),
@@ -1241,8 +1395,8 @@ async function logMatchDetails(challengerSubmissionId, defenderSubmissionId, res
                         }
                     });
 
-                    if (game.game_record.board_states && game.game_record.board_states.length > 0) {
-                        const finalBoard = game.game_record.board_states[game.game_record.board_states.length - 1];
+                    const finalBoard = reconstructBoardState(moves, game.game_record.skill_casts, boardSize);
+                    if (finalBoard) {
                         logContent += '\n最终棋盘:\n';
                         logContent += formatBoard(finalBoard);
                     }
@@ -1356,6 +1510,89 @@ function formatBoard(board) {
     }
 
     return boardStr;
+}
+
+function createEmptyBoard(boardSize) {
+    return Array.from({ length: boardSize }, () => Array(boardSize).fill(0));
+}
+
+function isStoneCell(cellValue) {
+    return cellValue === 1 || cellValue === 2;
+}
+
+function isValidBoardPosition(board, row, col) {
+    return Number.isInteger(row)
+        && Number.isInteger(col)
+        && row >= 0
+        && col >= 0
+        && row < board.length
+        && col < board.length;
+}
+
+function getSkillMarker(player) {
+    return player === 1 ? 3 : 4;
+}
+
+function clearBlockedCell(board, blockedCellForPlayer, player) {
+    const blockedCell = blockedCellForPlayer[player];
+    if (!blockedCell) {
+        return;
+    }
+
+    const [row, col] = blockedCell;
+    const caster = 3 - player;
+    const expectedMarker = getSkillMarker(caster);
+
+    if (isValidBoardPosition(board, row, col) && board[row][col] === expectedMarker) {
+        board[row][col] = 0;
+    }
+
+    blockedCellForPlayer[player] = null;
+}
+
+function reconstructBoardState(moves, skillCasts, boardSize) {
+    if (!Number.isInteger(boardSize) || boardSize <= 0) {
+        return null;
+    }
+
+    const board = createEmptyBoard(boardSize);
+    const blockedCellForPlayer = { 1: null, 2: null };
+    const skillCastByMoveNumber = new Map();
+
+    for (const cast of Array.isArray(skillCasts) ? skillCasts : []) {
+        if (cast && Number.isInteger(cast.move_number)) {
+            skillCastByMoveNumber.set(cast.move_number, cast);
+        }
+    }
+
+    for (const move of Array.isArray(moves) ? moves : []) {
+        if (!move || !Number.isInteger(move.player) || !Number.isInteger(move.move_number)) {
+            continue;
+        }
+
+        const skillCast = skillCastByMoveNumber.get(move.move_number);
+        if (skillCast && skillCast.player === move.player && Array.isArray(skillCast.position) && skillCast.position.length === 2) {
+            const [skillRow, skillCol] = skillCast.position;
+            if (isValidBoardPosition(board, skillRow, skillCol) && !isStoneCell(board[skillRow][skillCol])) {
+                blockedCellForPlayer[3 - move.player] = [skillRow, skillCol];
+                board[skillRow][skillCol] = getSkillMarker(move.player);
+            }
+        }
+
+        const isSuccessfulMove = move.result === 'valid' || move.result === 'winning_move' || move.result === 'draw_move';
+        if (isSuccessfulMove && Array.isArray(move.move) && move.move.length === 2) {
+            const [row, col] = move.move;
+            if (isValidBoardPosition(board, row, col)) {
+                board[row][col] = move.player;
+            }
+
+            if (move.result === 'valid') {
+                clearBlockedCell(board, blockedCellForPlayer, move.player);
+            }
+        }
+    }
+
+    return board;
 }
 
 function analyzeMovePatterns(moves) {
@@ -1513,15 +1750,21 @@ async function updateRankings(submissionId, newRank) {
     }
 
     await batchWriteJsonFile('./data/rankings.json', rankings);
-} app.use(async (error, req, res, next) => {
+}
+
+app.use(async (error, req, res, next) => {
     const context = `HTTP ${req.method} ${req.url} - IP: ${req.ip}`;
     await logError(error, context);
 
-    if (error.code === 'LIMIT_FILE_SIZE') {
+    if (error instanceof multer.MulterError && error.code === 'LIMIT_FILE_SIZE') {
         return res.status(400).json({ error: '文件大小超过50KB限制' });
     }
 
-    res.status(500).json({ error: error.message || '服务器内部错误' });
+    if (error.message === '只允许上传Python文件') {
+        return res.status(400).json({ error: error.message });
+    }
+
+    res.status(500).json({ error: '服务器内部错误' });
 });
 
 async function startServer() {

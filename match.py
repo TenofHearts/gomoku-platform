@@ -5,20 +5,26 @@
 """
 
 import argparse
+import contextlib
 import importlib.util
 import json
 import os
+import subprocess
 import sys
 import time
 from datetime import datetime
-from concurrent.futures import ThreadPoolExecutor, as_completed
+from concurrent.futures import ThreadPoolExecutor, TimeoutError as FutureTimeoutError, as_completed
 
 # 添加gomoku目录到Python路径
 current_dir = os.path.dirname(os.path.abspath(__file__))
 gomoku_dir = os.path.join(current_dir, "gomoku")
 sys.path.insert(0, gomoku_dir)
 
-from gomoku import play_game
+from gomoku import PLAYER_TIME_LIMIT, play_game
+
+RESULT_JSON_BEGIN = "__GOMOKU_MATCH_RESULT_JSON_BEGIN__"
+RESULT_JSON_END = "__GOMOKU_MATCH_RESULT_JSON_END__"
+MOVE_PROCESS_TIMEOUT = PLAYER_TIME_LIMIT + 1.0
 
 
 class AgentLoader:
@@ -90,6 +96,155 @@ class AgentLoader:
             raise RuntimeError(f"创建Agent实例失败: {e}")
 
 
+class IsolatedAgent:
+    """Agent proxy that runs one persistent worker process per game."""
+
+    def __init__(self, file_path, player_id):
+        self.file_path = file_path
+        self.player = player_id
+        self.opponent = 3 - player_id
+        self.process = None
+        self.response_executor = ThreadPoolExecutor(max_workers=1)
+
+    def _ensure_process(self):
+        if self.process is not None and self.process.poll() is None:
+            return
+
+        self.process = subprocess.Popen(
+            [
+                sys.executable,
+                os.path.abspath(__file__),
+                "--agent-worker",
+                self.file_path,
+                "--move-player",
+                str(self.player),
+            ],
+            stdin=subprocess.PIPE,
+            stdout=subprocess.PIPE,
+            stderr=sys.stderr,
+            text=True,
+            bufsize=1,
+            cwd=current_dir,
+        )
+
+    def make_move(self, board):
+        self._ensure_process()
+        board_data = board.tolist() if hasattr(board, "tolist") else board
+        payload = json.dumps({"board": board_data}, ensure_ascii=False) + "\n"
+
+        try:
+            self.process.stdin.write(payload)
+            self.process.stdin.flush()
+        except (BrokenPipeError, OSError) as exc:
+            self.close()
+            raise RuntimeError("Agent worker process is unavailable") from exc
+
+        future = self.response_executor.submit(self.process.stdout.readline)
+        try:
+            response_line = future.result(timeout=MOVE_PROCESS_TIMEOUT)
+        except FutureTimeoutError as exc:
+            self.close(kill=True)
+            raise TimeoutError(
+                f"Agent move exceeded {PLAYER_TIME_LIMIT:.0f} seconds"
+            ) from exc
+
+        if not response_line:
+            exit_code = self.process.poll()
+            self.close()
+            raise RuntimeError(
+                f"Agent worker exited unexpectedly with code {exit_code}"
+            )
+
+        try:
+            result = json.loads(response_line)
+        except json.JSONDecodeError as exc:
+            raise RuntimeError(
+                f"Agent move returned invalid JSON: {response_line[:500]}"
+            ) from exc
+
+        move = _list_to_tuple(result.get("move"))
+        skill = _list_to_tuple(result.get("skill"))
+        return move, skill
+
+    def close(self, kill=False):
+        process = self.process
+        self.process = None
+
+        if process is not None:
+            try:
+                if process.stdin:
+                    process.stdin.close()
+            except OSError:
+                pass
+
+            try:
+                if process.poll() is None:
+                    if kill:
+                        process.kill()
+                    else:
+                        process.terminate()
+                process.wait(timeout=1)
+            except subprocess.TimeoutExpired:
+                process.kill()
+                process.wait(timeout=1)
+
+        self.response_executor.shutdown(wait=False, cancel_futures=True)
+
+
+def _list_to_tuple(value):
+    if value is None:
+        return None
+    if isinstance(value, list):
+        return tuple(value)
+    return value
+
+
+def _json_safe(value):
+    if hasattr(value, "item"):
+        return value.item()
+    if isinstance(value, tuple):
+        return [_json_safe(item) for item in value]
+    if isinstance(value, list):
+        return [_json_safe(item) for item in value]
+    return value
+
+
+def run_move_worker(agent_path, player_id):
+    payload = json.load(sys.stdin)
+    agent = AgentLoader.load_agent_from_file(agent_path, player_id)
+    move_result = agent.make_move(payload["board"])
+
+    if isinstance(move_result, tuple) and len(move_result) == 2:
+        move, skill = move_result
+    else:
+        move, skill = move_result, None
+
+    return {"move": _json_safe(move), "skill": _json_safe(skill)}
+
+
+def run_agent_worker(agent_path, player_id, output_stream):
+    agent = AgentLoader.load_agent_from_file(agent_path, player_id)
+
+    for line in sys.stdin:
+        if not line.strip():
+            continue
+
+        payload = json.loads(line)
+        with contextlib.redirect_stdout(sys.stderr):
+            move_result = agent.make_move(payload["board"])
+
+        if isinstance(move_result, tuple) and len(move_result) == 2:
+            move, skill = move_result
+        else:
+            move, skill = move_result, None
+
+        print(
+            json.dumps({"move": _json_safe(move), "skill": _json_safe(skill)}, ensure_ascii=False),
+            file=output_stream,
+            flush=True,
+        )
+
+
 class MatchEngine:
     """比赛引擎，负责执行比赛和记录结果"""
 
@@ -109,8 +264,8 @@ class MatchEngine:
 
         try:
             # 每局比赛重新加载Agent以避免状态污染
-            agent1 = AgentLoader.load_agent_from_file(agent1_path, 1)
-            agent2 = AgentLoader.load_agent_from_file(agent2_path, 2)
+            agent1 = IsolatedAgent(agent1_path, 1)
+            agent2 = IsolatedAgent(agent2_path, 2)
 
             # 交替先手，保证公平性
             if game_num % 2 == 0:
@@ -152,7 +307,13 @@ class MatchEngine:
                             cast["player"] = 2
                         elif cast["player"] == 2:
                             cast["player"] = 1
+            agent1.close()
+            agent2.close()
         except Exception as e:
+            if "agent1" in locals():
+                agent1.close(kill=True)
+            if "agent2" in locals():
+                agent2.close(kill=True)
             # 异常情况下认为挑战者失败
             winner = 2
             game_record = {
@@ -182,7 +343,7 @@ class MatchEngine:
         }
 
     def run_match(
-        self, agent1_path, agent2_path, games=10, silent=True, max_workers=10
+        self, agent1_path, agent2_path, games=5, silent=True, max_workers=5
     ):
         """
         执行一场比赛（并发版本）
@@ -318,12 +479,16 @@ class MatchEngine:
 
 def main():
     """主函数"""
+    original_stdout = sys.stdout
     parser = argparse.ArgumentParser(description="五子棋AI对战系统")
 
-    parser.add_argument("--challenger", "-c", required=True, help="挑战者Agent文件路径")
-    parser.add_argument("--defender", "-d", required=True, help="防守者Agent文件路径")
+    parser.add_argument("--challenger", "-c", help="挑战者Agent文件路径")
+    parser.add_argument("--defender", "-d", help="防守者Agent文件路径")
+    parser.add_argument("--move-agent", help=argparse.SUPPRESS)
+    parser.add_argument("--agent-worker", help=argparse.SUPPRESS)
+    parser.add_argument("--move-player", type=int, help=argparse.SUPPRESS)
     parser.add_argument(
-        "--games", "-g", type=int, default=10, help="比赛局数 (默认: 10)"
+        "--games", "-g", type=int, default=5, help="比赛局数 (默认: 5)"
     )
     parser.add_argument(
         "--board-size", "-s", type=int, default=15, help="棋盘大小 (默认: 15)"
@@ -333,31 +498,55 @@ def main():
         "--silent", action="store_true", help="静默模式，不打印比赛过程"
     )
     parser.add_argument(
-        "--workers", "-w", type=int, default=10, help="最大并发工作线程数 (默认: 10)"
+        "--workers", "-w", type=int, default=5, help="最大并发工作线程数 (默认: 5)"
     )
 
     args = parser.parse_args()
 
+    if args.move_agent:
+        if args.move_player not in (1, 2):
+            print("错误: move-player必须为1或2", file=sys.stderr)
+            sys.exit(1)
+        move_result = None
+        with contextlib.redirect_stdout(sys.stderr):
+            move_result = run_move_worker(args.move_agent, args.move_player)
+        print(json.dumps(move_result, ensure_ascii=False), file=original_stdout)
+        return
+
+    if args.agent_worker:
+        if args.move_player not in (1, 2):
+            print("错误: move-player必须为1或2", file=sys.stderr)
+            sys.exit(1)
+        worker_stdout = original_stdout
+        with contextlib.redirect_stdout(sys.stderr):
+            run_agent_worker(args.agent_worker, args.move_player, worker_stdout)
+        return
+
+    if not args.challenger or not args.defender:
+        parser.error("--challenger and --defender are required")
+
     # 验证文件存在
     if not os.path.exists(args.challenger):
-        print(f"错误: 挑战者文件不存在: {args.challenger}")
+        print(f"错误: 挑战者文件不存在: {args.challenger}", file=sys.stderr)
         sys.exit(1)
 
     if not os.path.exists(args.defender):
-        print(f"错误: 防守者文件不存在: {args.defender}")
+        print(f"错误: 防守者文件不存在: {args.defender}", file=sys.stderr)
         sys.exit(1)
 
     # 创建比赛引擎
     engine = MatchEngine(args.board_size)
 
-    # 执行比赛
-    results = engine.run_match(
-        args.challenger,
-        args.defender,
-        args.games,
-        args.silent,
-        min(args.workers, args.games),
-    )
+    # Uploaded agents may print during import or make_move. Keep stdout reserved for
+    # the machine-readable result and send incidental output to stderr.
+    with contextlib.redirect_stdout(sys.stderr):
+        results = engine.run_match(
+            args.challenger,
+            args.defender,
+            args.games,
+            args.silent,
+            min(args.workers, args.games),
+        )
 
     # 输出结果
     if args.output:
@@ -371,7 +560,9 @@ def main():
             sys.exit(1)
     else:
         # 如果没有指定输出文件，打印JSON到标准输出
-        print(json.dumps(results, ensure_ascii=False, indent=2))
+        print(RESULT_JSON_BEGIN, file=original_stdout)
+        print(json.dumps(results, ensure_ascii=False, indent=2), file=original_stdout)
+        print(RESULT_JSON_END, file=original_stdout)
 
 
 if __name__ == "__main__":
