@@ -1,0 +1,14 @@
+[project]
+name = "gomoku-platform"
+version = "0.1.0"
+description = "Teaching gomoku platform backend scripts"
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = [
+    "numpy>=1.24",
+    "bcrypt>=4.0",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
