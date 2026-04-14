@@ -194,25 +194,58 @@ def read_matches(matches_path: Path) -> list[dict[str, Any]]:
     return matches
 
 
-def prompt_index(max_value: int, allow_back: bool = False) -> int | None:
-    while True:
-        raw = input(color("Select number", BOLD) + (" (`b` to go back): " if allow_back else ": ")).strip()
-        if allow_back and raw.lower() == "b":
-            return None
-        if raw.isdigit():
-            number = int(raw)
-            if 1 <= number <= max_value:
-                return number - 1
-        print(color("Invalid selection.", RED))
+def highlighted(text: str) -> str:
+    return f"\033[7m{text}{RESET}"
+
+
+def normalize_key(key: str) -> str:
+    if key in ("\r", "\n"):
+        return "enter"
+    if key == "\x1b":
+        return "escape"
+    return key.lower()
+
+
+def move_selection(current: int, total: int, direction: int) -> int:
+    if total <= 0:
+        return 0
+    return (current + direction) % total
+
+
+def render_selectable_row(is_selected: bool, text: str) -> None:
+    prefix = color("› ", GREEN) if is_selected else "  "
+    line = prefix + text
+    print(highlighted(line) if is_selected else line)
+
+
+def run_menu(total: int, render, allow_back: bool = False, initial_index: int = 0) -> int | None:
+    if total <= 0:
+        return None
+
+    selected = max(0, min(initial_index, total - 1))
+
+    with KeyReader() as reader:
+        while True:
+            render(selected)
+            key = normalize_key(reader.read_key())
+
+            if key == "j":
+                selected = move_selection(selected, total, 1)
+            elif key == "k":
+                selected = move_selection(selected, total, -1)
+            elif key == "enter":
+                return selected
+            elif allow_back and key in {"b", "escape"}:
+                return None
 
 
 def render_match_menu(matches: list[dict[str, Any]]) -> int | None:
-    while True:
+    def draw(selected: int) -> None:
         clear_screen()
         print(panel_line("═"))
         print(centered(f"{BOLD}GOMOKU MATCH VISUALIZER{RESET}"))
         print(panel_line("═"))
-        print(color("Choose a match by submission ids.", DIM))
+        print(color("Use j/k to move, Enter to open a match.", DIM))
         print()
 
         for index, match in enumerate(matches, start=1):
@@ -225,23 +258,21 @@ def render_match_menu(matches: list[dict[str, Any]]) -> int | None:
                 f"    winner: {winner_label(match, match.get('winner'))}"
                 f"    games: {safe_int(match.get('games_played') or len(match.get('games', [])))}"
             )
-            print(summary)
+            render_selectable_row(selected == index - 1, summary)
             print(color(f"     match id: {match.get('id', 'unknown')}    time: {stamp}", PANEL))
 
-        print()
-        choice = prompt_index(len(matches))
-        if choice is not None:
-            return choice
+    return run_menu(len(matches), draw)
 
 
 def render_game_menu(match: dict[str, Any]) -> int | None:
     games = match.get("games", [])
-    while True:
+    def draw(selected: int) -> None:
         clear_screen()
         print(panel_line("═"))
         print(centered(f"{BOLD}MATCH{RESET}  {match['challenger_submission_id']}  vs  {match['defender_submission_id']}"))
         print(panel_line("═"))
         print(color(f"Winner: {winner_label(match, match.get('winner'))}", DIM))
+        print(color("Use j/k to move, Enter to open a game, b to go back.", DIM))
         print()
 
         for index, game in enumerate(games, start=1):
@@ -249,15 +280,13 @@ def render_game_menu(match: dict[str, Any]) -> int | None:
             total_steps = len(record.get("moves", []))
             winner = game_winner_label(match, game, game.get("winner"))
             first = match["challenger_submission_id"] if game.get("challenger_first") else match["defender_submission_id"]
-            print(
+            row = (
                 f"[{index:02}] winner: {winner}    steps: {total_steps}    "
                 f"first: {first}    duration: {game.get('duration', 0):.2f}s"
             )
+            render_selectable_row(selected == index - 1, row)
 
-        print()
-        choice = prompt_index(len(games), allow_back=True)
-        if choice is not None or choice is None:
-            return choice
+    return run_menu(len(games), draw, allow_back=True)
 
 
 def format_board(board: list[list[int]]) -> str:
