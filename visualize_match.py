@@ -435,17 +435,17 @@ def wait_for_autoplay_input(timeout: float) -> str | None:
     return None
 
 
-def autoplay(match: dict[str, Any], game: dict[str, Any], frames: list[Frame], interval: float) -> str:
+def autoplay(match: dict[str, Any], game: dict[str, Any], frames: list[Frame], interval: float) -> tuple[str, int]:
     with KeyReader() as reader:
         for index in range(len(frames)):
             render_frame(match, game, frames, index, f"autoplay {interval:.1f}s/step")
             print(color("Controls: Space stop autoplay | q quit", BOLD))
             key = wait_for_autoplay_input(interval)
             if key == "space":
-                return "step"
+                return "step", index
             if key == "q":
-                return "quit"
-    return "step"
+                return "quit", index
+    return "step", len(frames) - 1
 
 
 class KeyReader:
@@ -487,8 +487,8 @@ class KeyReader:
         return sys.stdin.read(1)
 
 
-def step_mode(match: dict[str, Any], game: dict[str, Any], frames: list[Frame]) -> str:
-    index = len(frames) - 1
+def step_mode(match: dict[str, Any], game: dict[str, Any], frames: list[Frame], start_index: int | None = None) -> str:
+    index = len(frames) - 1 if start_index is None else max(0, min(start_index, len(frames) - 1))
 
     with KeyReader() as reader:
         while True:
@@ -512,10 +512,10 @@ def step_mode(match: dict[str, Any], game: dict[str, Any], frames: list[Frame]) 
 
 def play_game_loop(match: dict[str, Any], game: dict[str, Any], interval: float) -> str:
     frames = build_frames(match, game)
-    autoplay_action = autoplay(match, game, frames, interval)
+    autoplay_action, autoplay_index = autoplay(match, game, frames, interval)
     if autoplay_action == "quit":
         return "quit"
-    return step_mode(match, game, frames)
+    return step_mode(match, game, frames, start_index=autoplay_index)
 
 
 def run_visualizer(matches_path: Path, interval: float) -> int:
