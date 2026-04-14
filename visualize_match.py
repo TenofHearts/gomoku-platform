@@ -41,6 +41,8 @@ TERMINAL_RESULTS = {
     "blocked_position",
 }
 
+_LAST_SCREEN_LINES: list[str] | None = None
+
 
 @dataclass
 class Frame:
@@ -67,15 +69,35 @@ def enable_ansi_on_windows() -> None:
 
 
 def clear_screen() -> None:
+    global _LAST_SCREEN_LINES
+    _LAST_SCREEN_LINES = None
     sys.stdout.write("\033[2J\033[H")
     sys.stdout.flush()
 
 
 def render_screen(content: str, reset: bool = False) -> None:
-    prefix = "\033[2J\033[H" if reset else "\033[H\033[J"
-    if not content.endswith("\n"):
-        content += "\n"
-    sys.stdout.write(prefix + content)
+    global _LAST_SCREEN_LINES
+
+    lines = content.splitlines()
+    if reset or _LAST_SCREEN_LINES is None:
+        sys.stdout.write("\033[2J\033[H" + "\n".join(lines))
+        if lines:
+            sys.stdout.write(f"\033[{len(lines) + 1};1H")
+        _LAST_SCREEN_LINES = lines
+        sys.stdout.flush()
+        return
+
+    chunks: list[str] = []
+    for index, line in enumerate(lines):
+        if index >= len(_LAST_SCREEN_LINES) or line != _LAST_SCREEN_LINES[index]:
+            chunks.append(f"\033[{index + 1};1H\033[2K{line}")
+
+    for index in range(len(lines), len(_LAST_SCREEN_LINES)):
+        chunks.append(f"\033[{index + 1};1H\033[2K")
+
+    chunks.append(f"\033[{len(lines) + 1};1H")
+    sys.stdout.write("".join(chunks))
+    _LAST_SCREEN_LINES = lines
     sys.stdout.flush()
 
 
@@ -254,10 +276,9 @@ def terminal_height(default: int = 30) -> int:
         return default
 
 
-def visible_window(selected: int, total: int, max_visible: int) -> tuple[int, int]:
+def clamp_window_start(start: int, total: int, max_visible: int) -> int:
     max_visible = max(1, min(max_visible, total))
-    start = min(max(0, selected - max_visible + 1), max(0, total - max_visible))
-    return start, start + max_visible
+    return min(max(0, start), max(0, total - max_visible))
 
 
 def render_window_status(start: int, end: int, total: int) -> None:
@@ -279,15 +300,23 @@ def compose_output(draw) -> str:
     return buffer.getvalue()
 
 
-def run_menu(total: int, render, allow_back: bool = False, initial_index: int = 0) -> int | str | None:
+def run_menu(total: int, render, visible_count, allow_back: bool = False, initial_index: int = 0) -> int | str | None:
     if total <= 0:
         return None
 
     selected = max(0, min(initial_index, total - 1))
+    window_start = 0
 
     with KeyReader() as reader:
         while True:
-            render(selected)
+            max_visible = max(1, min(visible_count(), total))
+            window_start = clamp_window_start(window_start, total, max_visible)
+            if selected < window_start:
+                window_start = selected
+            elif selected >= window_start + max_visible:
+                window_start = selected - max_visible + 1
+
+            render(selected, window_start, window_start + max_visible)
             key = normalize_key(reader.read_key())
 
             if key == "j":
@@ -303,15 +332,15 @@ def run_menu(total: int, render, allow_back: bool = False, initial_index: int = 
 
 
 def render_match_menu(matches: list[dict[str, Any]]) -> int | str | None:
-    def draw(selected: int) -> None:
+    def visible_count() -> int:
+        return max(1, (terminal_height() - 7) // 2)
+
+    def draw(selected: int, start: int, end: int) -> None:
         print(panel_line("═"))
         print(centered(f"{BOLD}GOMOKU MATCH VISUALIZER{RESET}"))
         print(panel_line("═"))
         print(color("Use j/k to move, Enter to open a match, q to quit.", DIM))
         print()
-
-        max_visible = max(1, (terminal_height() - 7) // 2)
-        start, end = visible_window(selected, len(matches), max_visible)
 
         for index, match in enumerate(matches[start:end], start=start + 1):
             stamp = match.get("timestamp", "unknown time")
@@ -328,24 +357,25 @@ def render_match_menu(matches: list[dict[str, Any]]) -> int | str | None:
 
         render_window_status(start, end, len(matches))
 
-    def render(selected: int) -> None:
-        render_screen(compose_output(lambda: draw(selected)))
+    def render(selected: int, start: int, end: int) -> None:
+        render_screen(compose_output(lambda: draw(selected, start, end)))
 
-    return run_menu(len(matches), render)
+    return run_menu(len(matches), render, visible_count)
 
 
 def render_game_menu(match: dict[str, Any]) -> int | str | None:
     games = match.get("games", [])
-    def draw(selected: int) -> None:
+
+    def visible_count() -> int:
+        return max(1, terminal_height() - 8)
+
+    def draw(selected: int, start: int, end: int) -> None:
         print(panel_line("═"))
         print(centered(f"{BOLD}MATCH{RESET}  {match['challenger_submission_id']}  vs  {match['defender_submission_id']}"))
         print(panel_line("═"))
         print(color(f"Winner: {winner_label(match, match.get('winner'))}", DIM))
         print(color("Use j/k to move, Enter to open a game, b to go back, q to quit.", DIM))
         print()
-
-        max_visible = max(1, terminal_height() - 8)
-        start, end = visible_window(selected, len(games), max_visible)
 
         for index, game in enumerate(games[start:end], start=start + 1):
             record = game.get("game_record", {})
@@ -360,10 +390,10 @@ def render_game_menu(match: dict[str, Any]) -> int | str | None:
 
         render_window_status(start, end, len(games))
 
-    def render(selected: int) -> None:
-        render_screen(compose_output(lambda: draw(selected)))
+    def render(selected: int, start: int, end: int) -> None:
+        render_screen(compose_output(lambda: draw(selected, start, end)))
 
-    return run_menu(len(games), render, allow_back=True)
+    return run_menu(len(games), render, visible_count, allow_back=True)
 
 
 def format_board(board: list[list[int]]) -> str:
@@ -457,7 +487,14 @@ def describe_move(move: dict[str, Any], skill_cast: dict[str, Any] | None) -> st
     return " | ".join(str(piece) for piece in pieces)
 
 
-def render_frame(match: dict[str, Any], game: dict[str, Any], frames: list[Frame], frame_index: int, mode: str) -> None:
+def render_frame(
+    match: dict[str, Any],
+    game: dict[str, Any],
+    frames: list[Frame],
+    frame_index: int,
+    mode: str,
+    footer: str,
+) -> None:
     frame = frames[frame_index]
     move = frame.move
     total = max(len(frames) - 1, 0)
@@ -484,6 +521,7 @@ def render_frame(match: dict[str, Any], game: dict[str, Any], frames: list[Frame
         print()
         print(format_board(frame.board))
         print()
+        print(color(footer, BOLD))
 
     render_screen(compose_output(draw))
 
@@ -512,8 +550,14 @@ def wait_for_autoplay_input(timeout: float) -> str | None:
 def autoplay(match: dict[str, Any], game: dict[str, Any], frames: list[Frame], interval: float) -> tuple[str, int]:
     with KeyReader() as reader:
         for index in range(len(frames)):
-            render_frame(match, game, frames, index, f"autoplay {interval:.1f}s/step")
-            print(color("Controls: Space stop autoplay | q quit", BOLD))
+            render_frame(
+                match,
+                game,
+                frames,
+                index,
+                f"autoplay {interval:.1f}s/step",
+                "Controls: Space stop autoplay | q quit",
+            )
             key = wait_for_autoplay_input(interval)
             if key == "space":
                 return "step", index
@@ -566,8 +610,14 @@ def step_mode(match: dict[str, Any], game: dict[str, Any], frames: list[Frame], 
 
     with KeyReader() as reader:
         while True:
-            render_frame(match, game, frames, index, "step")
-            print(color("Controls: j previous | k next | r replay autoplay | g choose game | m choose match | q quit", BOLD))
+            render_frame(
+                match,
+                game,
+                frames,
+                index,
+                "step",
+                "Controls: j previous | k next | r replay autoplay | g choose game | m choose match | q quit",
+            )
             key = reader.read_key().lower()
 
             if key == "j":
