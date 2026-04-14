@@ -4,7 +4,8 @@
   "description": "五子棋AI对战平台（教学版）",
   "main": "server.js",
   "scripts": {
-    "start": "node server.js",
+    "start": "node scripts/hot-reload.js",
+    "serve": "node server.js",
     "dev": "node server.js",
     "visualize": "python visualize_match.py"
   },

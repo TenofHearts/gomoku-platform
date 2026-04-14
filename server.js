@@ -15,6 +15,7 @@ const MAX_PROCESS_OUTPUT_CHARS = 1024 * 1024;
 const MATCH_TIMEOUT_MS = Number(process.env.MATCH_TIMEOUT_MS || 6000 * 1000);
 const MATCH_GAMES = 5;
 const MATCH_WORKERS = 5;
+const MAX_RANKINGS = 10;
 const PYTHON_EXECUTABLE = process.env.PYTHON_EXECUTABLE || 'python';
 const RESULT_JSON_BEGIN = '__GOMOKU_MATCH_RESULT_JSON_BEGIN__';
 const RESULT_JSON_END = '__GOMOKU_MATCH_RESULT_JSON_END__';
@@ -102,10 +103,40 @@ class ChallengeQueue {
     constructor() {
         this.queue = [];
         this.isProcessing = false;
+        this.currentSubmissionId = null;
+        this.hotReloadRestoredSubmissions = new Set();
+    }
+
+    async restoreFromSubmissionHistory() {
+        try {
+            const submissionHistory = await readJsonFile('./data/submission_history.json');
+            const submissions = Array.isArray(submissionHistory.submissions) ? submissionHistory.submissions : [];
+            const testingSubmissions = submissions
+                .filter(submission => submission.status === 'testing')
+                .sort((a, b) => new Date(a.upload_time) - new Date(b.upload_time));
+            const waitingSubmissions = submissions
+                .filter(submission => submission.status === 'waiting')
+                .sort((a, b) => new Date(a.upload_time) - new Date(b.upload_time));
+            const restoredTestingIds = testingSubmissions.map(submission => submission.submission_id);
+            const waitingIds = waitingSubmissions.map(submission => submission.submission_id);
+
+            this.queue = [...new Set([...restoredTestingIds, ...waitingIds])];
+            this.hotReloadRestoredSubmissions = new Set(restoredTestingIds);
+            this.currentSubmissionId = null;
+            this.isProcessing = false;
+
+            if (this.queue.length > 0) {
+                Logger.info(`从现有提交记录恢复挑战队列，共 ${this.queue.length} 个待处理提交`);
+                this.processNext();
+            }
+        } catch (error) {
+            Logger.error('恢复挑战队列失败:', error);
+            await logError(error, '恢复挑战队列失败');
+        }
     }
 
     addChallenger(submissionId) {
-        if (this.queue.includes(submissionId)) {
+        if (this.queue.includes(submissionId) || this.currentSubmissionId === submissionId) {
             Logger.warn(`提交 ${submissionId} 已在挑战队列中，跳过重复添加`);
             return false;
         }
@@ -134,17 +165,20 @@ class ChallengeQueue {
 
         this.isProcessing = true;
         const currentChallengerSubmissionId = this.queue.shift();
+        const wasRestoredFromHotReload = this.hotReloadRestoredSubmissions.delete(currentChallengerSubmissionId);
+        this.currentSubmissionId = currentChallengerSubmissionId;
 
         Logger.info(`开始处理挑战者: ${currentChallengerSubmissionId}，剩余队列长度: ${this.queue.length}`);
 
         try {
-            await startChallengeProcess(currentChallengerSubmissionId);
+            await startChallengeProcess(currentChallengerSubmissionId, { wasRestoredFromHotReload });
             Logger.success(`挑战者 ${currentChallengerSubmissionId} 的所有对局已完成`);
         } catch (error) {
             Logger.error(`处理挑战者 ${currentChallengerSubmissionId} 时发生错误:`, error);
             await logError(error, `处理挑战者队列失败 - 挑战者: ${currentChallengerSubmissionId}`);
         }
 
+        this.currentSubmissionId = null;
         this.isProcessing = false;
 
         if (this.queue.length > 0) {
@@ -156,10 +190,12 @@ class ChallengeQueue {
     }
 
     getStatus() {
+        const queue = this.currentSubmissionId ? [this.currentSubmissionId, ...this.queue] : [...this.queue];
         return {
-            queueLength: this.queue.length,
+            queueLength: queue.length,
             isProcessing: this.isProcessing,
-            queue: [...this.queue]
+            currentSubmissionId: this.currentSubmissionId,
+            queue
         };
     }
 
@@ -171,6 +207,13 @@ class ChallengeQueue {
             return true;
         }
         return false;
+    }
+
+    clear() {
+        const previousStatus = this.getStatus();
+        this.queue = [];
+        this.hotReloadRestoredSubmissions.clear();
+        return previousStatus;
     }
 }
 
@@ -514,6 +557,30 @@ async function updateSubmissionStatus(submissionId, status) {
     }
 }
 
+async function cancelQueuedSubmissions(submissionIds) {
+    const queuedSubmissionIds = new Set(submissionIds);
+    if (queuedSubmissionIds.size === 0) {
+        return [];
+    }
+
+    const submissionHistory = await readJsonFile('./data/submission_history.json');
+    const cancelledSubmissionIds = [];
+
+    for (const submission of submissionHistory.submissions || []) {
+        if (queuedSubmissionIds.has(submission.submission_id) && ['waiting', 'testing'].includes(submission.status)) {
+            submission.status = 'cancelled';
+            submission.status_updated = new Date().toISOString();
+            cancelledSubmissionIds.push(submission.submission_id);
+        }
+    }
+
+    if (cancelledSubmissionIds.length > 0) {
+        await writeJsonFile('./data/submission_history.json', submissionHistory);
+    }
+
+    return cancelledSubmissionIds;
+}
+
 function requireAuth(req, res, next) {
     if (!req.session.studentId) {
         return res.status(401).json({ error: '请先登录' });
@@ -709,9 +776,12 @@ app.post('/api/upload', requireAuth, upload.single('agentFile'), async (req, res
 app.get('/api/rankings', async (req, res) => {
     try {
         const rankings = await readJsonFile('./data/rankings.json');
+        rankings.rankings.sort((a, b) => a.rank - b.rank);
+        rankings.rankings = rankings.rankings.slice(0, MAX_RANKINGS);
 
         for (let i = 0; i < rankings.rankings.length; i++) {
             const player = rankings.rankings[i];
+            player.rank = i + 1;
 
             if (!player.submission_id && player.student_id) {
                 const studentSubmissions = await getSubmissionsByStudentId(player.student_id);
@@ -939,16 +1009,20 @@ app.post('/api/admin/clear-queue', async (req, res) => {
             return res.status(403).json({ error: '无权限操作' });
         }
 
-        const oldStatus = challengeQueue.getStatus();
-        challengeQueue.queue = [];
-        challengeQueue.isProcessing = false;
+        const oldStatus = challengeQueue.clear();
+        const queuedSubmissionIds = oldStatus.queue.filter(submissionId => submissionId !== oldStatus.currentSubmissionId);
+        const cancelledSubmissions = await cancelQueuedSubmissions(queuedSubmissionIds);
 
-        Logger.warn('管理员清理了挑战队列', oldStatus);
+        Logger.warn('管理员清理了挑战队列', {
+            ...oldStatus,
+            cancelledSubmissions
+        });
 
         res.json({
             success: true,
             message: '挑战队列已清理',
-            previousStatus: oldStatus
+            previousStatus: oldStatus,
+            cancelledSubmissions
         });
     } catch (error) {
         await logError(error, '清理挑战队列失败');
@@ -956,7 +1030,7 @@ app.post('/api/admin/clear-queue', async (req, res) => {
     }
 });
 
-async function startChallengeProcess(challengerSubmissionId) {
+async function startChallengeProcess(challengerSubmissionId, options = {}) {
     try {
         Logger.info(`========== 开始处理挑战者提交 ${challengerSubmissionId} ==========`);
 
@@ -975,7 +1049,10 @@ async function startChallengeProcess(challengerSubmissionId) {
         const existingRank = rankings.rankings.find(r => r.submission_id === challengerSubmissionId);
 
         let targetRank;
-        if (rankings.rankings.length < 10) {
+        if (options.wasRestoredFromHotReload && existingRank) {
+            targetRank = existingRank.rank - 1;
+            Logger.info(`热更新恢复提交 ${challengerSubmissionId}，当前排行榜第 ${existingRank.rank} 名，将从第 ${targetRank} 名继续挑战`);
+        } else if (rankings.rankings.length < 10) {
             targetRank = rankings.rankings.length;
             if (targetRank === 0) targetRank = 1;
         } else {
@@ -1738,6 +1815,7 @@ async function updateRankings(submissionId, newRank) {
     });
 
     rankings.rankings.sort((a, b) => a.rank - b.rank);
+    rankings.rankings = rankings.rankings.slice(0, MAX_RANKINGS);
 
     for (let i = 0; i < rankings.rankings.length; i++) {
         const player = rankings.rankings[i];
@@ -1771,6 +1849,7 @@ async function startServer() {
     try {
         await ensureLogDirectory();
         await initializeDataFiles();
+        await challengeQueue.restoreFromSubmissionHistory();
 
         app.listen(PORT, () => {
             Logger.server(`五子棋对战平台已启动在端口 ${PORT}`);
@@ -1822,6 +1901,10 @@ async function gracefulShutdown(signal) {
             }
         }
 
+        Logger.info('正在刷新挑战完成后的待处理文件写入...');
+        await fileWriteQueue.flushAll();
+        Logger.success('最终文件写入刷新完成');
+
         Logger.success('优雅关闭完成');
         process.exit(0);
     } catch (error) {
@@ -1832,5 +1915,13 @@ async function gracefulShutdown(signal) {
 
 process.on('SIGTERM', () => gracefulShutdown('SIGTERM'));
 process.on('SIGINT', () => gracefulShutdown('SIGINT'));
+
+if (process.env.GOMOKU_HOT_RELOAD_CHILD === '1') {
+    process.on('message', message => {
+        if (message && message.type === 'gomoku:shutdown') {
+            gracefulShutdown(message.reason || 'hot-reload');
+        }
+    });
+}
 
 startServer();
