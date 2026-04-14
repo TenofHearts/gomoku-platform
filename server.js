@@ -126,7 +126,10 @@ class ChallengeQueue {
             this.isProcessing = false;
 
             if (this.queue.length > 0) {
-                Logger.info(`从现有提交记录恢复挑战队列，共 ${this.queue.length} 个待处理提交`);
+                Logger.info(`从现有提交记录恢复挑战队列，共 ${this.queue.length} 个待处理提交`, {
+                    testing: restoredTestingIds,
+                    waiting: waitingIds
+                });
                 this.processNext();
             }
         } catch (error) {
