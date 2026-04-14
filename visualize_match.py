@@ -71,6 +71,33 @@ def clear_screen() -> None:
     sys.stdout.flush()
 
 
+def render_screen(content: str, reset: bool = False) -> None:
+    prefix = "\033[2J\033[H" if reset else "\033[H\033[J"
+    if not content.endswith("\n"):
+        content += "\n"
+    sys.stdout.write(prefix + content)
+    sys.stdout.flush()
+
+
+def set_cursor_visible(visible: bool) -> None:
+    sys.stdout.write("\033[?25h" if visible else "\033[?25l")
+    sys.stdout.flush()
+
+
+class TerminalSession:
+    def __enter__(self) -> "TerminalSession":
+        sys.stdout.write("\033[?1049h")
+        sys.stdout.flush()
+        set_cursor_visible(False)
+        clear_screen()
+        return self
+
+    def __exit__(self, exc_type, exc, tb) -> None:
+        set_cursor_visible(True)
+        sys.stdout.write("\033[?1049l")
+        sys.stdout.flush()
+
+
 def clone_board(board: list[list[int]]) -> list[list[int]]:
     return [row[:] for row in board]
 
@@ -220,6 +247,16 @@ def render_selectable_row(is_selected: bool, text: str) -> None:
     print(highlighted(line) if is_selected else line)
 
 
+def compose_output(draw) -> str:
+    from io import StringIO
+    import contextlib
+
+    buffer = StringIO()
+    with contextlib.redirect_stdout(buffer):
+        draw()
+    return buffer.getvalue()
+
+
 def run_menu(total: int, render, allow_back: bool = False, initial_index: int = 0) -> int | str | None:
     if total <= 0:
         return None
@@ -245,7 +282,6 @@ def run_menu(total: int, render, allow_back: bool = False, initial_index: int = 
 
 def render_match_menu(matches: list[dict[str, Any]]) -> int | str | None:
     def draw(selected: int) -> None:
-        clear_screen()
         print(panel_line("═"))
         print(centered(f"{BOLD}GOMOKU MATCH VISUALIZER{RESET}"))
         print(panel_line("═"))
@@ -265,13 +301,15 @@ def render_match_menu(matches: list[dict[str, Any]]) -> int | str | None:
             render_selectable_row(selected == index - 1, summary)
             print(color(f"     match id: {match.get('id', 'unknown')}    time: {stamp}", PANEL))
 
-    return run_menu(len(matches), draw)
+    def render(selected: int) -> None:
+        render_screen(compose_output(lambda: draw(selected)))
+
+    return run_menu(len(matches), render)
 
 
 def render_game_menu(match: dict[str, Any]) -> int | str | None:
     games = match.get("games", [])
     def draw(selected: int) -> None:
-        clear_screen()
         print(panel_line("═"))
         print(centered(f"{BOLD}MATCH{RESET}  {match['challenger_submission_id']}  vs  {match['defender_submission_id']}"))
         print(panel_line("═"))
@@ -290,7 +328,10 @@ def render_game_menu(match: dict[str, Any]) -> int | str | None:
             )
             render_selectable_row(selected == index - 1, row)
 
-    return run_menu(len(games), draw, allow_back=True)
+    def render(selected: int) -> None:
+        render_screen(compose_output(lambda: draw(selected)))
+
+    return run_menu(len(games), render, allow_back=True)
 
 
 def format_board(board: list[list[int]]) -> str:
@@ -388,30 +429,31 @@ def render_frame(match: dict[str, Any], game: dict[str, Any], frames: list[Frame
     frame = frames[frame_index]
     move = frame.move
     total = max(len(frames) - 1, 0)
-    clear_screen()
-
-    print(panel_line("═"))
-    print(centered(f"{BOLD}GOMOKU REPLAY{RESET}"))
-    print(panel_line("═"))
-    print(
-        f"{color(match['challenger_submission_id'], CYAN)} vs "
-        f"{color(match['defender_submission_id'], MAGENTA)}"
-        f"    game: {game.get('game_number', '?')}"
-        f"    mode: {mode}"
-    )
-    print(
-        f"winner: {game_winner_label(match, game, game.get('winner'))}    "
-        f"frame: {frame_index}/{total}"
-    )
-    print(color(frame.caption, DIM))
-    if move:
+    def draw() -> None:
+        print(panel_line("═"))
+        print(centered(f"{BOLD}GOMOKU REPLAY{RESET}"))
+        print(panel_line("═"))
         print(
-            f"status: {move_status_label(str(move.get('result', 'unknown')))}    "
-            f"step time: {float(move.get('time_taken', 0)):.3f}s"
+            f"{color(match['challenger_submission_id'], CYAN)} vs "
+            f"{color(match['defender_submission_id'], MAGENTA)}"
+            f"    game: {game.get('game_number', '?')}"
+            f"    mode: {mode}"
         )
-    print()
-    print(format_board(frame.board))
-    print()
+        print(
+            f"winner: {game_winner_label(match, game, game.get('winner'))}    "
+            f"frame: {frame_index}/{total}"
+        )
+        print(color(frame.caption, DIM))
+        if move:
+            print(
+                f"status: {move_status_label(str(move.get('result', 'unknown')))}    "
+                f"step time: {float(move.get('time_taken', 0)):.3f}s"
+            )
+        print()
+        print(format_board(frame.board))
+        print()
+
+    render_screen(compose_output(draw))
 
 
 def wait_for_autoplay_input(timeout: float) -> str | None:
@@ -585,7 +627,8 @@ def main() -> int:
         return 1
 
     try:
-        return run_visualizer(matches_path, args.interval)
+        with TerminalSession():
+            return run_visualizer(matches_path, args.interval)
     except KeyboardInterrupt:
         clear_screen()
         return 130
