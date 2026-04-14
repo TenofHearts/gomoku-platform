@@ -201,6 +201,8 @@ def highlighted(text: str) -> str:
 def normalize_key(key: str) -> str:
     if key in ("\r", "\n"):
         return "enter"
+    if key == " ":
+        return "space"
     if key == "\x1b":
         return "escape"
     return key.lower()
@@ -218,7 +220,7 @@ def render_selectable_row(is_selected: bool, text: str) -> None:
     print(highlighted(line) if is_selected else line)
 
 
-def run_menu(total: int, render, allow_back: bool = False, initial_index: int = 0) -> int | None:
+def run_menu(total: int, render, allow_back: bool = False, initial_index: int = 0) -> int | str | None:
     if total <= 0:
         return None
 
@@ -235,17 +237,19 @@ def run_menu(total: int, render, allow_back: bool = False, initial_index: int = 
                 selected = move_selection(selected, total, -1)
             elif key == "enter":
                 return selected
+            elif key == "q":
+                return "quit"
             elif allow_back and key in {"b", "escape"}:
                 return None
 
 
-def render_match_menu(matches: list[dict[str, Any]]) -> int | None:
+def render_match_menu(matches: list[dict[str, Any]]) -> int | str | None:
     def draw(selected: int) -> None:
         clear_screen()
         print(panel_line("═"))
         print(centered(f"{BOLD}GOMOKU MATCH VISUALIZER{RESET}"))
         print(panel_line("═"))
-        print(color("Use j/k to move, Enter to open a match.", DIM))
+        print(color("Use j/k to move, Enter to open a match, q to quit.", DIM))
         print()
 
         for index, match in enumerate(matches, start=1):
@@ -264,7 +268,7 @@ def render_match_menu(matches: list[dict[str, Any]]) -> int | None:
     return run_menu(len(matches), draw)
 
 
-def render_game_menu(match: dict[str, Any]) -> int | None:
+def render_game_menu(match: dict[str, Any]) -> int | str | None:
     games = match.get("games", [])
     def draw(selected: int) -> None:
         clear_screen()
@@ -272,7 +276,7 @@ def render_game_menu(match: dict[str, Any]) -> int | None:
         print(centered(f"{BOLD}MATCH{RESET}  {match['challenger_submission_id']}  vs  {match['defender_submission_id']}"))
         print(panel_line("═"))
         print(color(f"Winner: {winner_label(match, match.get('winner'))}", DIM))
-        print(color("Use j/k to move, Enter to open a game, b to go back.", DIM))
+        print(color("Use j/k to move, Enter to open a game, b to go back, q to quit.", DIM))
         print()
 
         for index, game in enumerate(games, start=1):
@@ -410,10 +414,38 @@ def render_frame(match: dict[str, Any], game: dict[str, Any], frames: list[Frame
     print()
 
 
-def autoplay(match: dict[str, Any], game: dict[str, Any], frames: list[Frame], interval: float) -> None:
-    for index in range(len(frames)):
-        render_frame(match, game, frames, index, f"autoplay {interval:.1f}s/step")
-        time.sleep(interval)
+def wait_for_autoplay_input(timeout: float) -> str | None:
+    deadline = time.time() + timeout
+
+    if os.name == "nt":
+        import msvcrt
+
+        while time.time() < deadline:
+            if msvcrt.kbhit():
+                return normalize_key(msvcrt.getwch())
+            time.sleep(0.02)
+        return None
+
+    import select
+
+    remaining = max(0.0, deadline - time.time())
+    ready, _, _ = select.select([sys.stdin], [], [], remaining)
+    if ready:
+        return normalize_key(sys.stdin.read(1))
+    return None
+
+
+def autoplay(match: dict[str, Any], game: dict[str, Any], frames: list[Frame], interval: float) -> str:
+    with KeyReader() as reader:
+        for index in range(len(frames)):
+            render_frame(match, game, frames, index, f"autoplay {interval:.1f}s/step")
+            print(color("Controls: Space stop autoplay | q quit", BOLD))
+            key = wait_for_autoplay_input(interval)
+            if key == "space":
+                return "step"
+            if key == "q":
+                return "quit"
+    return "step"
 
 
 class KeyReader:
@@ -480,7 +512,9 @@ def step_mode(match: dict[str, Any], game: dict[str, Any], frames: list[Frame]) 
 
 def play_game_loop(match: dict[str, Any], game: dict[str, Any], interval: float) -> str:
     frames = build_frames(match, game)
-    autoplay(match, game, frames, interval)
+    autoplay_action = autoplay(match, game, frames, interval)
+    if autoplay_action == "quit":
+        return "quit"
     return step_mode(match, game, frames)
 
 
@@ -492,12 +526,18 @@ def run_visualizer(matches_path: Path, interval: float) -> int:
 
     while True:
         match_index = render_match_menu(matches)
+        if match_index == "quit":
+            clear_screen()
+            return 0
         if match_index is None:
             return 0
         match = matches[match_index]
 
         while True:
             game_index = render_game_menu(match)
+            if game_index == "quit":
+                clear_screen()
+                return 0
             if game_index is None:
                 break
             game = match.get("games", [])[game_index]
