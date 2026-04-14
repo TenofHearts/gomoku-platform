@@ -247,6 +247,28 @@ def render_selectable_row(is_selected: bool, text: str) -> None:
     print(highlighted(line) if is_selected else line)
 
 
+def terminal_height(default: int = 30) -> int:
+    try:
+        return os.get_terminal_size().lines
+    except OSError:
+        return default
+
+
+def visible_window(selected: int, total: int, max_visible: int) -> tuple[int, int]:
+    max_visible = max(1, min(max_visible, total))
+    start = min(max(0, selected - max_visible + 1), max(0, total - max_visible))
+    return start, start + max_visible
+
+
+def render_window_status(start: int, end: int, total: int) -> None:
+    if total <= end - start:
+        return
+
+    position = f"showing {start + 1}-{end} of {total}"
+    print()
+    print(color(f"More items available with j/k ({position}).", DIM))
+
+
 def compose_output(draw) -> str:
     from io import StringIO
     import contextlib
@@ -288,7 +310,10 @@ def render_match_menu(matches: list[dict[str, Any]]) -> int | str | None:
         print(color("Use j/k to move, Enter to open a match, q to quit.", DIM))
         print()
 
-        for index, match in enumerate(matches, start=1):
+        max_visible = max(1, (terminal_height() - 7) // 2)
+        start, end = visible_window(selected, len(matches), max_visible)
+
+        for index, match in enumerate(matches[start:end], start=start + 1):
             stamp = match.get("timestamp", "unknown time")
             summary = (
                 f"[{index:02}] "
@@ -300,6 +325,8 @@ def render_match_menu(matches: list[dict[str, Any]]) -> int | str | None:
             )
             render_selectable_row(selected == index - 1, summary)
             print(color(f"     match id: {match.get('id', 'unknown')}    time: {stamp}", PANEL))
+
+        render_window_status(start, end, len(matches))
 
     def render(selected: int) -> None:
         render_screen(compose_output(lambda: draw(selected)))
@@ -317,7 +344,10 @@ def render_game_menu(match: dict[str, Any]) -> int | str | None:
         print(color("Use j/k to move, Enter to open a game, b to go back, q to quit.", DIM))
         print()
 
-        for index, game in enumerate(games, start=1):
+        max_visible = max(1, terminal_height() - 8)
+        start, end = visible_window(selected, len(games), max_visible)
+
+        for index, game in enumerate(games[start:end], start=start + 1):
             record = game.get("game_record", {})
             total_steps = len(record.get("moves", []))
             winner = game_winner_label(match, game, game.get("winner"))
@@ -327,6 +357,8 @@ def render_game_menu(match: dict[str, Any]) -> int | str | None:
                 f"first: {first}    duration: {game.get('duration', 0):.2f}s"
             )
             render_selectable_row(selected == index - 1, row)
+
+        render_window_status(start, end, len(games))
 
     def render(selected: int) -> None:
         render_screen(compose_output(lambda: draw(selected)))
