@@ -399,7 +399,11 @@ class KeyReader:
 
             self._fd = sys.stdin.fileno()
             self._old_settings = termios.tcgetattr(self._fd)
-            tty.setraw(self._fd)
+            # `setraw` disables output post-processing on many remote TTYs,
+            # which breaks newline handling and causes the board to drift
+            # across the screen in step mode. `setcbreak` still gives us
+            # single-key input while keeping normal screen rendering intact.
+            tty.setcbreak(self._fd)
 
         return self
 
