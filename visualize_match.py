@@ -188,17 +188,12 @@ def winner_label(match: dict[str, Any], winner: Any) -> str:
 
 
 def side_for_player(match: dict[str, Any], game: dict[str, Any], player: int) -> tuple[str, str]:
-    challenger_first = bool(game.get("challenger_first"))
-    if challenger_first:
-        if player == 1:
-            return "challenger", match["challenger_submission_id"]
-        if player == 2:
-            return "defender", match["defender_submission_id"]
-    else:
-        if player == 1:
-            return "defender", match["defender_submission_id"]
-        if player == 2:
-            return "challenger", match["challenger_submission_id"]
+    # Match records are normalized by match.py after alternating first player:
+    # player 1 is always the challenger, and player 2 is always the defender.
+    if player == 1:
+        return "challenger", match["challenger_submission_id"]
+    if player == 2:
+        return "defender", match["defender_submission_id"]
     return "unknown", f"player-{player}"
 
 
