@@ -221,11 +221,11 @@ def symbol_for(cell: int) -> str:
     if cell == PLAYER1_STONE:
         return color("●", CYAN)
     if cell == PLAYER2_STONE:
-        return color("○", MAGENTA)
+        return color("●", RED)
     if cell == PLAYER1_SKILL:
-        return color("◇", BLUE)
+        return color("◆", BLUE)
     if cell == PLAYER2_SKILL:
-        return color("◆", YELLOW)
+        return color("◆", RED)
     return color("·", PANEL)
 
 
