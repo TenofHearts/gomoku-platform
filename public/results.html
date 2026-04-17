@@ -108,6 +108,35 @@
             background: linear-gradient(135deg, #fff5f5 0%, #fed7d7 100%);
         }
 
+        .match-tie {
+            border-left-color: #ecc94b;
+            background: linear-gradient(135deg, #fffff0 0%, #fefcbf 100%);
+        }
+
+        .game-records {
+            margin-top: 0.9rem;
+            padding-top: 0.9rem;
+            border-top: 1px solid rgba(45, 55, 72, 0.12);
+        }
+
+        .game-record-row {
+            display: grid;
+            grid-template-columns: 90px 1fr 90px 110px 100px;
+            gap: 0.75rem;
+            align-items: center;
+            padding: 0.55rem 0;
+            border-bottom: 1px solid rgba(45, 55, 72, 0.08);
+        }
+
+        .game-record-row:last-child {
+            border-bottom: 0;
+        }
+
+        .game-meta {
+            font-size: 0.85rem;
+            color: #4a5568;
+        }
+
         .stats-card {
             border-radius: 15px;
             background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
@@ -233,6 +262,13 @@
             color: #e2e8f0;
             padding: 0.2rem 0.5rem;
             border-radius: 5px;
+        }
+
+        @media (max-width: 768px) {
+            .game-record-row {
+                grid-template-columns: 1fr;
+                gap: 0.35rem;
+            }
         }
     </style>
 </head>
@@ -425,6 +461,36 @@
                                                                             formatDate(match.timestamp) }}</small>
                                                                     </div>
                                                                 </div>
+                                                                <div v-if="getMatchGames(match).length > 0"
+                                                                    class="game-records">
+                                                                    <div v-for="game in getMatchGames(match)"
+                                                                        :key="`${match.id}-${game.game_number}`"
+                                                                        class="game-record-row">
+                                                                        <div>
+                                                                            <span class="badge bg-dark">第 {{
+                                                                                game.game_number }} 局</span>
+                                                                        </div>
+                                                                        <div class="game-meta">
+                                                                            胜者：<strong>{{
+                                                                                getGameWinnerText(match, game)
+                                                                            }}</strong>
+                                                                            <span class="mx-2">|</span>
+                                                                            先手：{{ getFirstPlayerText(match, game) }}
+                                                                        </div>
+                                                                        <div class="game-meta">
+                                                                            {{ getGameMoveCount(game) }} 手
+                                                                        </div>
+                                                                        <div class="game-meta">
+                                                                            {{ formatDuration(game.duration) }}
+                                                                        </div>
+                                                                        <div class="text-md-end">
+                                                                            <a class="btn btn-primary btn-sm"
+                                                                                :href="getGameReplayUrl(match, game, submission.submission_id)">
+                                                                                自动回放
+                                                                            </a>
+                                                                        </div>
+                                                                    </div>
+                                                                </div>
                                                             </div>
                                                         </div>
                                                         <div v-else class="text-center text-muted">
@@ -531,6 +597,8 @@
                 getMatchResultClass(match, submissionId) {
                     if (match.winner === submissionId) {
                         return 'match-win';
+                    } else if (match.winner === 'tie') {
+                        return 'match-tie';
                     } else {
                         return 'match-loss';
                     }
@@ -571,6 +639,51 @@
                     } else {
                         return match.challenger_wins;
                     }
+                },
+                getMatchGames(match) {
+                    return Array.isArray(match.games) ? match.games : [];
+                },
+                getGameMoveCount(game) {
+                    return game.game_record?.moves?.length || game.game_record?.total_moves || 0;
+                },
+                getGameWinnerText(match, game) {
+                    const winner = this.normalizeWinner(game.winner);
+                    if (winner === 'tie' || winner === 0) {
+                        return '平局';
+                    }
+                    if (winner === 1) {
+                        return match.challenger_submission_id || match.challenger || '挑战者';
+                    }
+                    if (winner === 2) {
+                        return match.defender_submission_id || match.defender || '防守方';
+                    }
+                    return game.winner || '未知';
+                },
+                getFirstPlayerText(match, game) {
+                    return game.challenger_first ?
+                        (match.challenger_submission_id || match.challenger || '挑战者') :
+                        (match.defender_submission_id || match.defender || '防守方');
+                },
+                getGameReplayUrl(match, game, submissionId) {
+                    const params = new URLSearchParams({
+                        matchId: match.id,
+                        game: game.game_number,
+                        submissionId
+                    });
+                    return `replay.html?${params.toString()}`;
+                },
+                formatDuration(seconds) {
+                    const value = Number(seconds || 0);
+                    return `${value.toFixed(2)} 秒`;
+                },
+                normalizeWinner(winner) {
+                    if (winner === '1') {
+                        return 1;
+                    }
+                    if (winner === '2') {
+                        return 2;
+                    }
+                    return winner;
                 },
                 formatDate(dateString) {
                     const date = new Date(dateString);
