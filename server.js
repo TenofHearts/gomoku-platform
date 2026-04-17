@@ -12,7 +12,7 @@ const crypto = require('crypto');
 const app = express();
 const PORT = process.env.PORT || 3000;
 const MAX_PROCESS_OUTPUT_CHARS = 1024 * 1024;
-const MATCH_TIMEOUT_MS = Number(process.env.MATCH_TIMEOUT_MS || 6000 * 1000);
+const MATCH_TIMEOUT_MS = Number(process.env.MATCH_TIMEOUT_MS || 18000 * 1000);
 const MATCH_GAMES = 5;
 const MATCH_WORKERS = 5;
 const MAX_RANKINGS = 10;
@@ -1213,7 +1213,7 @@ async function runMatch(challengerSubmissionId, defenderSubmissionId) {
                         Logger.error(errorMsg);
                         await logError(new Error(errorMsg), `比赛超时 - ${challengerSubmissionId} vs ${defenderSubmissionId || 'default'} - stdout=${stdout}, stderr=${stderr}`);
                         if (matchResultPath) {
-                            fs.unlink(matchResultPath).catch(() => {});
+                            fs.unlink(matchResultPath).catch(() => { });
                             matchResultPath = null;
                         }
 
@@ -1238,7 +1238,7 @@ async function runMatch(challengerSubmissionId, defenderSubmissionId) {
 
                         await logError(new Error(errorMsg), `比赛执行失败 - ${challengerSubmissionId} vs ${defenderSubmissionId || 'default'} - 详细信息: 退出代码=${code}, stdout=${stdout}, stderr=${stderr}`);
                         if (matchResultPath) {
-                            fs.unlink(matchResultPath).catch(() => {});
+                            fs.unlink(matchResultPath).catch(() => { });
                             matchResultPath = null;
                         }
 
@@ -1253,7 +1253,7 @@ async function runMatch(challengerSubmissionId, defenderSubmissionId) {
 
                     const resultOutput = await fs.readFile(matchResultPath, 'utf8');
                     const result = JSON.parse(resultOutput);
-                    fs.unlink(matchResultPath).catch(() => {});
+                    fs.unlink(matchResultPath).catch(() => { });
                     matchResultPath = null;
 
                     await recordMatch(challengerSubmissionId, defenderSubmissionId, result);
@@ -1273,7 +1273,7 @@ async function runMatch(challengerSubmissionId, defenderSubmissionId) {
 
                     await logError(error, `处理比赛结果失败 - ${challengerSubmissionId} vs ${defenderSubmissionId || 'default'} - stdout长度=${stdout.length}, stderr=${stderr}, 原始输出=${stdout}`);
                     if (matchResultPath) {
-                        fs.unlink(matchResultPath).catch(() => {});
+                        fs.unlink(matchResultPath).catch(() => { });
                         matchResultPath = null;
                     }
 
@@ -1299,7 +1299,7 @@ async function runMatch(challengerSubmissionId, defenderSubmissionId) {
 
                 await logError(error, `启动比赛进程失败 - ${challengerSubmissionId} vs ${defenderSubmissionId || 'default'} - 错误代码=${error.code}, 信号=${error.signal}`);
                 if (matchResultPath) {
-                    fs.unlink(matchResultPath).catch(() => {});
+                    fs.unlink(matchResultPath).catch(() => { });
                     matchResultPath = null;
                 }
 
@@ -1314,7 +1314,7 @@ async function runMatch(challengerSubmissionId, defenderSubmissionId) {
             Logger.error('比赛执行前准备失败:', error);
             await logError(error, `比赛准备失败 - ${challengerSubmissionId} vs ${defenderSubmissionId || 'default'}`);
             if (matchResultPath) {
-                fs.unlink(matchResultPath).catch(() => {});
+                fs.unlink(matchResultPath).catch(() => { });
             }
             resolve({
                 winner: defenderSubmissionId || 'default',
